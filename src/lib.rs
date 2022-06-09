@@ -11,15 +11,16 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
     }
 }
 
-/// Represents a one-time task to be done at a specific time. The time is specified as a weekday.
-/// After the given weekday, the `Todo` will show up for the current day.
+/// Represents a one-time task to be done at a specific date. The date is specified as a weekday
+/// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
+/// `Todo` will show up for the current day.
 pub struct Todo {
     body: String,
     date: Date<Local>,
 }
 
 impl Todo {
-    /// Creates a new `Todo` that shows up to be done for every day.
+    /// Creates a new `Todo` that shows up to be done for the current day.
     pub fn new_undated(body: String) -> Todo {
         Todo {
             body,
@@ -27,7 +28,8 @@ impl Todo {
         }
     }
 
-    /// Creates a new `Todo` that shows up to be done at a specific day.
+    /// Creates a new `Todo` that shows up to be done at a specific weekday after which it will show
+    /// for the current day.
     pub fn new_dated(body: String, weekday: Weekday) -> Todo {
         Todo {
             body,
@@ -40,7 +42,7 @@ impl Todo {
         &self.body
     }
 
-    /// Gets the date of the `Todo` as a weekday.
+    /// Gets the weekday of the `Todo`.
     pub fn weekday(&self) -> Weekday {
         self.date.weekday()
     }
@@ -50,7 +52,7 @@ impl Todo {
         self.body = body;
     }
 
-    /// Sets the date of the `Todo`.
+    /// Sets the weekday of the `Todo`.
     pub fn set_weekday(&mut self, weekday: Weekday) {
         self.date = weekday_to_date(weekday, Local::today());
     }
