@@ -175,11 +175,13 @@ impl Task {
                 new_weekdays.push(wd.clone());
             }
         }
+
+        self.set_weekdays(new_weekdays);
     }
 }
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s.
-struct TdList {
+pub struct TdList {
     todos: Vec<Todo>,
     tasks: Vec<Task>,
 }
@@ -238,7 +240,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn task_new_panics_if_empty_weekday_vec() {
-        let task = Task::new("Panic!".to_string(), vec![]);
+        Task::new("Panic!".to_string(), vec![]);
     }
 
     #[test]
