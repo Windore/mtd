@@ -37,6 +37,25 @@ impl Todo {
         }
     }
 
+    /// Returns `true` if the `Todo` is for a given weekday.
+    /// # Examples
+    /// ```
+    /// use chrono::{Datelike, Local, Weekday};
+    /// use mtd::Todo;
+    ///
+    /// let td = Todo::new_undated("For today's weekday.".to_string());
+    /// assert!(td.for_weekday(Local::today().weekday()));
+    ///
+    /// let td = Todo::new_dated("For the next wednesday.".to_string(), Weekday::Wed);
+    /// assert!(td.for_weekday(Weekday::Wed));
+    ///
+    /// let td = Todo::new_dated("For the next wednesday.".to_string(), Weekday::Wed);
+    /// assert!(!td.for_weekday(Weekday::Tue));
+    /// ```
+    pub fn for_weekday(&self, weekday: Weekday) -> bool {
+        self.weekday() == weekday
+    }
+
     /// Gets the `body` of the `Todo`.
     pub fn body(&self) -> &str {
         &self.body
