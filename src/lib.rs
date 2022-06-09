@@ -93,6 +93,26 @@ impl Task {
         }
         Task { body, weekdays }
     }
+
+    /// Gets the `body` of the `Task`.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    /// Gets the `weekdays` of the `Task`.
+    pub fn weekdays(&self) -> &Vec<Weekday> {
+        &self.weekdays
+    }
+
+    /// Sets the `body` of the `Task`.
+    pub fn set_body(&mut self, body: String) {
+        self.body = body;
+    }
+
+    /// Sets the `weekdays` of the `Task`.
+    pub fn set_weekdays(&mut self, weekdays: Vec<Weekday>) {
+        self.weekdays = weekdays;
+    }
 }
 
 #[cfg(test)]
