@@ -77,9 +77,27 @@ impl Todo {
     }
 }
 
+/// Represents a reoccurring task for the given weekday(s).
+pub struct Task {
+    body: String,
+    weekdays: Vec<Weekday>,
+}
+
+impl Task {
+    /// Creates a new task with the given weekday(s).
+    /// # Panics
+    /// If the given weekdays list is empty.
+    pub fn new(body: String, weekdays: Vec<Weekday>) -> Task {
+        if weekdays.is_empty() {
+            panic!("Cannot create a task without specifying at least one weekday.")
+        }
+        Task { body, weekdays }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::weekday_to_date;
+    use crate::{Task, weekday_to_date};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
@@ -97,5 +115,11 @@ mod tests {
 
         // Mon should return next weeks monday
         assert_eq!(weekday_to_date(Weekday::Mon, today), Local.ymd(2022, 6, 13));
+    }
+
+    #[test]
+    #[should_panic]
+    fn task_new_panics_if_empty_weekday_vec() {
+        let task = Task::new("Panic!".to_string(), vec![]);
     }
 }
