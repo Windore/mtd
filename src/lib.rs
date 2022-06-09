@@ -28,6 +28,29 @@ pub fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> 
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Represents a one-time task to be done at a specific weekday.
+pub struct Todo {
+    body: String,
+    date: Date<Local>,
 }
+
+impl Todo {
+    /// Creates a new `Todo` that doesn't have a weekday associated with it.
+    pub fn new_undated(body: String) -> Todo {
+        Todo {
+            body,
+            date: Local::today(),
+        }
+    }
+
+    /// Creates a new `Todo` that has a weekday associated with it.
+    pub fn new_dated(body: String, weekday: Weekday) -> Todo {
+        Todo {
+            body,
+            date: weekday_to_date(weekday, Local::today()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {}
