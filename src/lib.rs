@@ -83,6 +83,7 @@ impl Todo {
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
+    id: u64,
 }
 
 impl Task {
@@ -95,7 +96,7 @@ impl Task {
         if weekdays.is_empty() {
             panic!("Cannot create a task without specifying at least one weekday.")
         }
-        Task { body, weekdays }
+        Task { body, weekdays, id: 0 }
     }
 
     /// Gets the `body` of the `Task`.
@@ -108,6 +109,11 @@ impl Task {
         &self.weekdays
     }
 
+    /// Gets the `id` of the `Task`.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Sets the `body` of the `Task`.
     pub fn set_body(&mut self, body: String) {
         self.body = body;
@@ -116,6 +122,11 @@ impl Task {
     /// Sets the `weekdays` of the `Task`.
     pub fn set_weekdays(&mut self, weekdays: Vec<Weekday>) {
         self.weekdays = weekdays;
+    }
+
+    /// Sets the `id` of the `Task`.
+    pub fn set_id(&mut self, id: u64) {
+        self.id = id;
     }
 
     /// Adds a weekday to the weekdays list.
