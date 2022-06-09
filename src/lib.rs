@@ -190,6 +190,16 @@ impl TdList {
         Self { todos: Vec::new(), tasks: Vec::new() }
     }
 
+    /// Gets all the `Todo`s in the list.
+    pub fn todos(&self) -> &Vec<Todo> {
+        &self.todos
+    }
+
+    /// Gets all the `Task`s in the list.
+    pub fn tasks(&self) -> &Vec<Task> {
+        &self.tasks
+    }
+
     /// Adds a `Todo` to the list.
     pub fn add_todo(&mut self, todo: Todo) {
         self.todos.push(todo);
