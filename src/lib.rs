@@ -11,14 +11,15 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
     }
 }
 
-/// Represents a one-time task to be done at a specific weekday.
+/// Represents a one-time task to be done at a specific time. The time is specified as a weekday.
+/// After the given weekday, the `Todo` will show up for the current day.
 pub struct Todo {
     body: String,
     date: Date<Local>,
 }
 
 impl Todo {
-    /// Creates a new `Todo` that doesn't have a weekday associated with it.
+    /// Creates a new `Todo` that shows up to be done for every day.
     pub fn new_undated(body: String) -> Todo {
         Todo {
             body,
@@ -26,7 +27,7 @@ impl Todo {
         }
     }
 
-    /// Creates a new `Todo` that has a weekday associated with it.
+    /// Creates a new `Todo` that shows up to be done at a specific day.
     pub fn new_dated(body: String, weekday: Weekday) -> Todo {
         Todo {
             body,
@@ -45,7 +46,7 @@ mod tests {
         use chrono::{Local, TimeZone, Weekday};
 
         // Today is a Tuesday
-        let today = Local.ymd(2022,6,7);
+        let today = Local.ymd(2022, 6, 7);
 
         // Tue should return today’s date
         assert_eq!(weekday_to_date(Weekday::Tue, today), today);
@@ -54,7 +55,6 @@ mod tests {
         assert_eq!(weekday_to_date(Weekday::Wed, today), today.succ());
 
         // Mon should return next weeks monday
-        assert_eq!(weekday_to_date(Weekday::Mon, today), Local.ymd(2022,6,13));
+        assert_eq!(weekday_to_date(Weekday::Mon, today), Local.ymd(2022, 6, 13));
     }
-
 }
