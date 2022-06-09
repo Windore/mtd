@@ -201,12 +201,14 @@ impl TdList {
     }
 
     /// Adds a `Todo` to the list.
-    pub fn add_todo(&mut self, todo: Todo) {
+    pub fn add_todo(&mut self, mut todo: Todo) {
+        todo.set_id(self.todos.len() as u64);
         self.todos.push(todo);
     }
 
     /// Adds a `Task` to the list.
-    pub fn add_task(&mut self, task: Task) {
+    pub fn add_task(&mut self, mut task: Task) {
+        task.set_id(self.tasks.len() as u64);
         self.tasks.push(task);
     }
 }
@@ -215,7 +217,7 @@ impl TdList {
 mod tests {
     use chrono::{Local, TimeZone, Weekday};
 
-    use crate::{Task, weekday_to_date};
+    use crate::{Task, TdList, Todo, weekday_to_date};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
@@ -248,5 +250,31 @@ mod tests {
         assert!(task.weekdays().contains(&Weekday::Mon));
         assert!(task.weekdays().contains(&Weekday::Tue));
         assert!(!task.weekdays().contains(&Weekday::Wed));
+    }
+
+    #[test]
+    fn tdlist_add_todo_updates_ids() {
+        let mut list = TdList::new();
+
+        list.add_todo(Todo::new_undated("Todo 0".to_string()));
+        list.add_todo(Todo::new_undated("Todo 1".to_string()));
+        list.add_todo(Todo::new_undated("Todo 2".to_string()));
+
+        assert_eq!(list.todos[0].id(), 0);
+        assert_eq!(list.todos[1].id(), 1);
+        assert_eq!(list.todos[2].id(), 2);
+    }
+
+    #[test]
+    fn tdlist_add_task_updates_ids() {
+        let mut list = TdList::new();
+
+        list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
+        list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
+        list.add_task(Task::new("Task 2".to_string(), vec![Weekday::Mon]));
+
+        assert_eq!(list.tasks[0].id(), 0);
+        assert_eq!(list.tasks[1].id(), 1);
+        assert_eq!(list.tasks[2].id(), 2);
     }
 }
