@@ -38,7 +38,9 @@ impl Todo {
     }
 
     /// Returns `true` if the `Todo` is for a given weekday.
-    /// # Examples
+    ///
+    /// # Example
+    ///
     /// ```
     /// use chrono::{Datelike, Local, Weekday};
     /// use mtd::Todo;
@@ -85,7 +87,9 @@ pub struct Task {
 
 impl Task {
     /// Creates a new task with the given weekday(s).
+    ///
     /// # Panics
+    ///
     /// If the given weekdays list is empty.
     pub fn new(body: String, weekdays: Vec<Weekday>) -> Task {
         if weekdays.is_empty() {
@@ -113,17 +117,54 @@ impl Task {
     pub fn set_weekdays(&mut self, weekdays: Vec<Weekday>) {
         self.weekdays = weekdays;
     }
+
+    /// Adds a weekday to the weekdays list.
+    pub fn add_weekday(&mut self, weekday: Weekday) {
+        // It doesn't matter if there are duplicate weekdays.
+        self.weekdays.push(weekday);
+    }
+
+    /// Removes a weekday from the weekdays list.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use chrono::Weekday;
+    /// use mtd::Task;
+    ///
+    /// let mut task = Task::new("Test task".to_string(), vec![Weekday::Mon, Weekday::Tue, Weekday::Wed]);
+    /// task.remove_weekday(Weekday::Wed);
+    ///
+    /// // Removing a weekday that isn't listed does nothing.
+    /// task.remove_weekday(Weekday::Fri);
+    ///
+    /// assert!(task.weekdays().contains(&Weekday::Mon));
+    /// assert!(task.weekdays().contains(&Weekday::Tue));
+    /// // Doesn't contain wed anymore
+    /// assert!(!task.weekdays().contains(&Weekday::Wed));
+    /// ```
+    pub fn remove_weekday(&mut self, removed_wd: Weekday) {
+        let mut new_weekdays = Vec::new();
+
+        for wd in &self.weekdays {
+            if wd != &removed_wd {
+                new_weekdays.push(wd.clone());
+            }
+        }
+
+        self.weekdays = new_weekdays;
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::{Local, TimeZone, Weekday};
+
     use crate::{Task, weekday_to_date};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
     fn weekday_to_date_returns_correct_dates() {
-        use chrono::{Local, TimeZone, Weekday};
-
         // Today is a Tuesday
         let today = Local.ymd(2022, 6, 7);
 
@@ -141,5 +182,16 @@ mod tests {
     #[should_panic]
     fn task_new_panics_if_empty_weekday_vec() {
         let task = Task::new("Panic!".to_string(), vec![]);
+    }
+
+    #[test]
+    fn task_remove_weekday_removes_all_duplicates() {
+        let mut task = Task::new("Test task".to_string(), vec![Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Wed]);
+
+        task.remove_weekday(Weekday::Wed);
+
+        assert!(task.weekdays().contains(&Weekday::Mon));
+        assert!(task.weekdays().contains(&Weekday::Tue));
+        assert!(!task.weekdays().contains(&Weekday::Wed));
     }
 }
