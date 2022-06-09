@@ -17,6 +17,7 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 pub struct Todo {
     body: String,
     date: Date<Local>,
+    id: u64,
 }
 
 impl Todo {
@@ -25,6 +26,7 @@ impl Todo {
         Todo {
             body,
             date: Local::today(),
+            id: 0
         }
     }
 
@@ -34,6 +36,7 @@ impl Todo {
         Todo {
             body,
             date: weekday_to_date(weekday, Local::today()),
+            id: 0
         }
     }
 
@@ -68,6 +71,11 @@ impl Todo {
         self.date.weekday()
     }
 
+    /// Gets the `id` of the `Todo`.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Sets the `body` of the `Todo`.
     pub fn set_body(&mut self, body: String) {
         self.body = body;
@@ -76,6 +84,11 @@ impl Todo {
     /// Sets the weekday of the `Todo`.
     pub fn set_weekday(&mut self, weekday: Weekday) {
         self.date = weekday_to_date(weekday, Local::today());
+    }
+
+    /// Sets the `id` of the `Todo`.
+    pub fn set_id(&mut self, id: u64) {
+        self.id = id;
     }
 }
 
