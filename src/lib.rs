@@ -34,6 +34,26 @@ impl Todo {
             date: weekday_to_date(weekday, Local::today()),
         }
     }
+
+    /// Gets the `body` of the `Todo`.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    /// Gets the date of the `Todo` as a weekday.
+    pub fn weekday(&self) -> Weekday {
+        self.date.weekday()
+    }
+
+    /// Sets the `body` of the `Todo`.
+    pub fn set_body(&mut self, body: String) {
+        self.body = body;
+    }
+
+    /// Sets the date of the `Todo`.
+    pub fn set_weekday(&mut self, weekday: Weekday) {
+        self.date = weekday_to_date(weekday, Local::today());
+    }
 }
 
 #[cfg(test)]
