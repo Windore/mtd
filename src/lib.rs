@@ -215,6 +215,24 @@ impl Task {
 
         self.set_weekdays(new_weekdays);
     }
+
+    /// Returns `true` if the `Task` is for a given date.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use chrono::{Local, TimeZone, Weekday};
+    /// use mtd::Task;
+    ///
+    /// let task = Task::new("Task".to_string(), vec![Weekday::Fri, Weekday::Sun]);
+    ///
+    /// assert!(task.for_date(Local.ymd(2022, 6, 10))); // 2022-6-10 is a Friday
+    /// assert!(!task.for_date(Local.ymd(2022, 6, 11))); // Saturday
+    /// assert!(task.for_date(Local.ymd(2022, 6, 12))); // Sunday
+    /// ```
+    pub fn for_date(&self, date: Date<Local>) -> bool {
+        self.weekdays.contains(&date.weekday())
+    }
 }
 
 impl Display for Task {
