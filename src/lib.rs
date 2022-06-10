@@ -21,6 +21,7 @@ pub struct Todo {
     body: String,
     date: Date<Local>,
     id: u64,
+    done: bool,
 }
 
 impl Todo {
@@ -30,6 +31,7 @@ impl Todo {
             body,
             date: Local::today(),
             id: 0,
+            done: false,
         }
     }
 
@@ -40,6 +42,7 @@ impl Todo {
             body,
             date: weekday_to_date(weekday, Local::today()),
             id: 0,
+            done: false,
         }
     }
 
@@ -49,6 +52,7 @@ impl Todo {
             body,
             date,
             id: 0,
+            done: false,
         }
     }
 
@@ -106,6 +110,16 @@ impl Todo {
     /// Sets the `id` of the `Todo`.
     pub fn set_id(&mut self, id: u64) {
         self.id = id;
+    }
+
+    /// Returns `true` if the `Todo` is done.
+    pub fn done(&self) -> bool {
+        self.done
+    }
+
+    /// Sets the done state of the `Todo`.
+    pub fn set_done(&mut self, done: bool) {
+        self.done = done;
     }
 }
 
