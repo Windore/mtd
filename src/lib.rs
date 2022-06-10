@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::os::unix::raw::time_t;
 
@@ -133,6 +134,7 @@ impl Display for Todo {
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
+    done_map: HashMap<Weekday, Date<Local>>,
     id: u64,
 }
 
@@ -146,7 +148,7 @@ impl Task {
         if weekdays.is_empty() {
             panic!("Cannot create a task without specifying at least one weekday.")
         }
-        Task { body, weekdays, id: 0 }
+        Task { body, weekdays, id: 0, done_map: HashMap::new() }
     }
 
     /// Gets the `body` of the `Task`.
@@ -232,6 +234,70 @@ impl Task {
     /// ```
     pub fn for_date(&self, date: Date<Local>) -> bool {
         self.weekdays.contains(&date.weekday())
+    }
+
+    /// Returns `true` if the `Task` is done for the given date. Always returns `true` if the task
+    /// is not for the given the date.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use chrono::{Local, TimeZone, Weekday};
+    /// use mtd::Task;
+    ///
+    /// let mut task = Task::new("Task".to_string(), vec![Weekday::Mon, Weekday::Wed, Weekday::Thu]);
+    ///
+    /// task.set_done(true, Local.ymd(2022, 6, 13));
+    /// task.set_done(true, Local.ymd(2022, 6, 16));
+    ///
+    /// // Done for mon and thu
+    /// assert!(task.done(Local.ymd(2022, 6, 13)));
+    /// assert!(task.done(Local.ymd(2022, 6, 16)));
+    ///
+    /// // Not done for wed
+    /// assert!(!task.done(Local.ymd(2022, 6, 15)));
+    ///
+    /// // Not done for the following week's mon/thu
+    /// assert!(!task.done(Local.ymd(2022, 6, 20)));
+    /// assert!(!task.done(Local.ymd(2022, 6, 23)));
+    ///
+    /// // Since 2022-6-21 is a tue, the task is done for that date
+    /// assert!(task.done(Local.ymd(2022, 6, 21)));
+    /// ```
+    pub fn done(&self, date: Date<Local>) -> bool {
+        if self.for_date(date) {
+            if let Some(d) = self.done_map.get(&date.weekday()) {
+                return *d >= date;
+            }
+            return false;
+        }
+        true
+    }
+
+
+    /// Sets the done state of the `Task` for the given date.
+    ///
+    /// # Example
+    ///
+    /// ```
+    ///
+    /// use chrono::{Local, TimeZone, Weekday};
+    /// use mtd::Task;
+    ///
+    /// let mut task = Task::new("Task".to_string(), vec![Weekday::Mon]);
+    ///
+    /// task.set_done(true, Local.ymd(2022, 6, 13));
+    /// assert!(task.done(Local.ymd(2022, 6, 13)));
+    ///
+    /// task.set_done(false, Local.ymd(2022, 6, 13));
+    /// assert!(!task.done(Local.ymd(2022, 6, 13)));
+    /// ```
+    pub fn set_done(&mut self, done: bool, date: Date<Local>) {
+        if done {
+            self.done_map.insert(date.weekday(), date);
+        } else {
+            self.done_map.remove(&date.weekday());
+        }
     }
 }
 
@@ -330,6 +396,7 @@ mod tests {
         assert_eq!(todo.to_string(), "Todo (ID: 0)".to_string());
     }
 
+    // TODO: Break this unit test to smaller tests
     #[test]
     fn todo_for_date_returns_true_for_correct_dates() {
         let todo = Todo::new_specific_date("Friday".to_string(), Local.ymd(2022, 6, 10));
