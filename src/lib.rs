@@ -228,8 +228,8 @@ impl TdList {
         self.tasks.push(task);
     }
 
-    /// Removes the `Todo` that matches the given id. If no such `Todo` exists, does nothing.
-    /// Removing a `Todo` may change the ids of other `Todo`s.
+    /// Removes the `Todo` that matches the given id. The id matches the index of the `Todo`. If no
+    /// such `Todo` exists, does nothing. Removing a `Todo` may change the ids of other `Todo`s.
     pub fn remove_todo(&mut self, id: u64) {
         if self.todos.len() <= id as usize {
             return;
@@ -241,8 +241,8 @@ impl TdList {
         }
     }
 
-    /// Removes the `Task` that matches the given id. If no such `Task` exists, does nothing.
-    /// Removing a `Task` may change the ids of other `Task`s.
+    /// Removes the `Task` that matches the given id. The id matches the index of the `Task`. If no
+    /// such `Task` exists, does nothing. Removing a `Task` may change the ids of other `Task`s.
     pub fn remove_task(&mut self, id: u64) {
         if self.tasks.len() <= id as usize {
             return;
