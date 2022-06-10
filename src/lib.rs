@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use chrono::{Date, Datelike, Local, Weekday};
 
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
@@ -92,6 +94,12 @@ impl Todo {
     }
 }
 
+impl Display for Todo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (ID: {})", self.body, self.id)
+    }
+}
+
 /// Represents a reoccurring task for the given weekday(s).
 pub struct Task {
     body: String,
@@ -180,6 +188,12 @@ impl Task {
     }
 }
 
+impl Display for Task {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (ID: {})", self.body, self.id)
+    }
+}
+
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s.
 pub struct TdList {
     todos: Vec<Todo>,
@@ -264,6 +278,12 @@ mod tests {
     }
 
     #[test]
+    fn todo_displays_correctly() {
+        let todo = Todo::new_undated("Todo".to_string());
+        assert_eq!(todo.to_string(), "Todo (ID: 0)".to_string());
+    }
+
+    #[test]
     #[should_panic]
     fn task_new_panics_if_empty_weekday_vec() {
         Task::new("Panic!".to_string(), vec![]);
@@ -278,6 +298,12 @@ mod tests {
         assert!(task.weekdays().contains(&Weekday::Mon));
         assert!(task.weekdays().contains(&Weekday::Tue));
         assert!(!task.weekdays().contains(&Weekday::Wed));
+    }
+
+    #[test]
+    fn task_displays_correctly() {
+        let task = Task::new("Task".to_string(), vec![Weekday::Wed]);
+        assert_eq!(task.to_string(), "Task (ID: 0)".to_string());
     }
 
     #[test]
