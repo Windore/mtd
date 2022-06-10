@@ -26,7 +26,7 @@ impl Todo {
         Todo {
             body,
             date: Local::today(),
-            id: 0
+            id: 0,
         }
     }
 
@@ -36,7 +36,7 @@ impl Todo {
         Todo {
             body,
             date: weekday_to_date(weekday, Local::today()),
-            id: 0
+            id: 0,
         }
     }
 
@@ -288,9 +288,9 @@ mod tests {
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
         list.add_todo(Todo::new_undated("Todo 2".to_string()));
 
-        assert_eq!(list.todos[0].id(), 0);
-        assert_eq!(list.todos[1].id(), 1);
-        assert_eq!(list.todos[2].id(), 2);
+        assert_eq!(list.todos()[0].id(), 0);
+        assert_eq!(list.todos()[1].id(), 1);
+        assert_eq!(list.todos()[2].id(), 2);
     }
 
     #[test]
@@ -303,11 +303,11 @@ mod tests {
 
         list.remove_todo(1);
 
-        assert_eq!(list.todos[0].id(), 0);
-        assert_eq!(list.todos[1].id(), 1);
-        assert_eq!(list.todos[0].body(), "Todo 0");
-        assert_eq!(list.todos[1].body(), "Todo 2");
-        assert_eq!(list.todos.len(), 2);
+        assert_eq!(list.todos()[0].id(), 0);
+        assert_eq!(list.todos()[1].id(), 1);
+        assert_eq!(list.todos()[0].body(), "Todo 0");
+        assert_eq!(list.todos()[1].body(), "Todo 2");
+        assert_eq!(list.todos().len(), 2);
     }
 
     #[test]
@@ -319,10 +319,10 @@ mod tests {
 
         list.remove_todo(2);
 
-        assert_eq!(list.todos[0].id(), 0);
-        assert_eq!(list.todos[1].id(), 1);
-        assert_eq!(list.todos[0].body(), "Todo 0");
-        assert_eq!(list.todos[1].body(), "Todo 1");
+        assert_eq!(list.todos()[0].id(), 0);
+        assert_eq!(list.todos()[1].id(), 1);
+        assert_eq!(list.todos()[0].body(), "Todo 0");
+        assert_eq!(list.todos()[1].body(), "Todo 1");
     }
 
     #[test]
@@ -333,9 +333,9 @@ mod tests {
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 2".to_string(), vec![Weekday::Mon]));
 
-        assert_eq!(list.tasks[0].id(), 0);
-        assert_eq!(list.tasks[1].id(), 1);
-        assert_eq!(list.tasks[2].id(), 2);
+        assert_eq!(list.tasks()[0].id(), 0);
+        assert_eq!(list.tasks()[1].id(), 1);
+        assert_eq!(list.tasks()[2].id(), 2);
     }
 
     #[test]
@@ -348,15 +348,15 @@ mod tests {
 
         list.remove_task(1);
 
-        assert_eq!(list.tasks[0].id(), 0);
-        assert_eq!(list.tasks[1].id(), 1);
-        assert_eq!(list.tasks[0].body(), "Task 0");
-        assert_eq!(list.tasks[1].body(), "Task 2");
-        assert_eq!(list.tasks.len(), 2);
+        assert_eq!(list.tasks()[0].id(), 0);
+        assert_eq!(list.tasks()[1].id(), 1);
+        assert_eq!(list.tasks()[0].body(), "Task 0");
+        assert_eq!(list.tasks()[1].body(), "Task 2");
+        assert_eq!(list.tasks().len(), 2);
     }
 
     #[test]
-    fn list_remove_task_does_nothing_with_nonexistent_id() {
+    fn tdlist_remove_task_does_nothing_with_nonexistent_id() {
         let mut list = TdList::new();
 
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
@@ -364,9 +364,9 @@ mod tests {
 
         list.remove_task(2);
 
-        assert_eq!(list.tasks[0].id(), 0);
-        assert_eq!(list.tasks[1].id(), 1);
-        assert_eq!(list.tasks[0].body(), "Task 0");
-        assert_eq!(list.tasks[1].body(), "Task 1");
+        assert_eq!(list.tasks()[0].id(), 0);
+        assert_eq!(list.tasks()[1].id(), 1);
+        assert_eq!(list.tasks()[0].body(), "Task 0");
+        assert_eq!(list.tasks()[1].body(), "Task 1");
     }
 }
