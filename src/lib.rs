@@ -123,7 +123,7 @@ pub struct Task {
 }
 
 impl Task {
-    /// Creates a new task with the given weekday(s).
+    /// Creates a new task for the given weekday(s).
     ///
     /// # Panics
     ///
@@ -140,7 +140,7 @@ impl Task {
         &self.body
     }
 
-    /// Gets the `weekdays` of the `Task`.
+    /// Gets the `weekdays` of the `Task`. Note that duplicate weekdays are allowed.
     pub fn weekdays(&self) -> &Vec<Weekday> {
         &self.weekdays
     }
@@ -171,7 +171,7 @@ impl Task {
         self.weekdays.push(weekday);
     }
 
-    /// Removes a weekday from the weekdays list.
+    /// Removes a weekday from the weekdays list. Removes all duplicates as well.
     ///
     /// # Example
     ///
