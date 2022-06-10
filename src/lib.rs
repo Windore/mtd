@@ -396,18 +396,20 @@ mod tests {
         assert_eq!(todo.to_string(), "Todo (ID: 0)".to_string());
     }
 
-    // TODO: Break this unit test to smaller tests
     #[test]
-    fn todo_for_date_returns_true_for_correct_dates() {
+    fn todo_for_date_tests() {
         let todo = Todo::new_specific_date("Friday".to_string(), Local.ymd(2022, 6, 10));
 
         let today = Local.ymd(2022, 6, 10);
 
-        assert!(todo.for_date_today(today, today));
-        assert!(todo.for_date_today(today, today.pred()));
-        assert!(!todo.for_date_today(today, today.succ()));
-        assert!(todo.for_date_today(today.succ(), today.succ()));
-        assert!(!todo.for_date_today(today.succ(), today));
+        // The following 5 asserts could each be their own unit test but I'm to lazy to do it so
+        // instead I just added some comments explaining the tests
+
+        assert!(todo.for_date_today(today, today)); // Todo is for the given date on the same day
+        assert!(todo.for_date_today(today, today.pred())); // Todo is for the given date before the given date
+        assert!(!todo.for_date_today(today, today.succ())); // Todo is not for the given date after the given date
+        assert!(todo.for_date_today(today.succ(), today.succ())); // Todo is for the following date one day after the given date
+        assert!(!todo.for_date_today(today.succ(), today)); // Todo is not for the following date because it is already for today
     }
 
     #[test]
