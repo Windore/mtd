@@ -213,6 +213,32 @@ impl TdList {
         task.set_id(self.tasks.len() as u64);
         self.tasks.push(task);
     }
+
+    /// Removes the `Todo` that matches the given id. If no such `Todo` exists, does nothing.
+    /// Removing a `Todo` may change the ids of other `Todo`s.
+    pub fn remove_todo(&mut self, id: u64) {
+        if self.todos.len() <= id as usize {
+            return;
+        }
+        self.todos.remove(id as usize);
+
+        for (new_id, item) in self.todos.iter_mut().enumerate() {
+            item.set_id(new_id as u64);
+        }
+    }
+
+    /// Removes the `Task` that matches the given id. If no such `Task` exists, does nothing.
+    /// Removing a `Task` may change the ids of other `Task`s.
+    pub fn remove_task(&mut self, id: u64) {
+        if self.tasks.len() <= id as usize {
+            return;
+        }
+        self.tasks.remove(id as usize);
+
+        for (new_id, item) in self.tasks.iter_mut().enumerate() {
+            item.set_id(new_id as u64);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -268,6 +294,38 @@ mod tests {
     }
 
     #[test]
+    fn tdlist_remove_todo_updates_ids() {
+        let mut list = TdList::new();
+
+        list.add_todo(Todo::new_undated("Todo 0".to_string()));
+        list.add_todo(Todo::new_undated("Todo 1".to_string()));
+        list.add_todo(Todo::new_undated("Todo 2".to_string()));
+
+        list.remove_todo(1);
+
+        assert_eq!(list.todos[0].id(), 0);
+        assert_eq!(list.todos[1].id(), 1);
+        assert_eq!(list.todos[0].body(), "Todo 0");
+        assert_eq!(list.todos[1].body(), "Todo 2");
+        assert_eq!(list.todos.len(), 2);
+    }
+
+    #[test]
+    fn list_remove_todo_does_nothing_with_nonexistent_id() {
+        let mut list = TdList::new();
+
+        list.add_todo(Todo::new_undated("Todo 0".to_string()));
+        list.add_todo(Todo::new_undated("Todo 1".to_string()));
+
+        list.remove_todo(2);
+
+        assert_eq!(list.todos[0].id(), 0);
+        assert_eq!(list.todos[1].id(), 1);
+        assert_eq!(list.todos[0].body(), "Todo 0");
+        assert_eq!(list.todos[1].body(), "Todo 1");
+    }
+
+    #[test]
     fn tdlist_add_task_updates_ids() {
         let mut list = TdList::new();
 
@@ -278,5 +336,37 @@ mod tests {
         assert_eq!(list.tasks[0].id(), 0);
         assert_eq!(list.tasks[1].id(), 1);
         assert_eq!(list.tasks[2].id(), 2);
+    }
+
+    #[test]
+    fn tdlist_remove_task_updates_ids() {
+        let mut list = TdList::new();
+
+        list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
+        list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
+        list.add_task(Task::new("Task 2".to_string(), vec![Weekday::Mon]));
+
+        list.remove_task(1);
+
+        assert_eq!(list.tasks[0].id(), 0);
+        assert_eq!(list.tasks[1].id(), 1);
+        assert_eq!(list.tasks[0].body(), "Task 0");
+        assert_eq!(list.tasks[1].body(), "Task 2");
+        assert_eq!(list.tasks.len(), 2);
+    }
+
+    #[test]
+    fn list_remove_task_does_nothing_with_nonexistent_id() {
+        let mut list = TdList::new();
+
+        list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
+        list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
+
+        list.remove_task(2);
+
+        assert_eq!(list.tasks[0].id(), 0);
+        assert_eq!(list.tasks[1].id(), 1);
+        assert_eq!(list.tasks[0].body(), "Task 0");
+        assert_eq!(list.tasks[1].body(), "Task 1");
     }
 }
