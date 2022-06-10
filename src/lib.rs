@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::os::unix::raw::time_t;
 
 use chrono::{Date, Datelike, Local, Weekday};
 
@@ -42,25 +43,39 @@ impl Todo {
         }
     }
 
-    /// Returns `true` if the `Todo` is for a given weekday.
+    // Used for unit testing with non-today dependant date
+    fn new_specific_date(body: String, date: Date<Local>) -> Todo {
+        Todo {
+            body,
+            date,
+            id: 0,
+        }
+    }
+
+    /// Returns `true` if the `Todo` is for a given date.
     ///
     /// # Example
     ///
     /// ```
-    /// use chrono::{Datelike, Local, Weekday};
+    /// use chrono::{Datelike, Local};
     /// use mtd::Todo;
     ///
-    /// let td = Todo::new_undated("For today's weekday.".to_string());
-    /// assert!(td.for_weekday(Local::today().weekday()));
+    /// let todo_for_today = Todo::new_undated("I am for today".to_string());
     ///
-    /// let td = Todo::new_dated("For the next wednesday.".to_string(), Weekday::Wed);
-    /// assert!(td.for_weekday(Weekday::Wed));
+    /// assert!(todo_for_today.for_date(Local::today()));
     ///
-    /// let td = Todo::new_dated("For the next wednesday.".to_string(), Weekday::Wed);
-    /// assert!(!td.for_weekday(Weekday::Tue));
+    /// let todo_for_tomorrow = Todo::new_dated("I am for tomorrow".to_string(), Local::today().succ().weekday());
+    ///
+    /// assert!(!todo_for_tomorrow.for_date(Local::today()));
+    /// assert!(todo_for_tomorrow.for_date(Local::today().succ()));
     /// ```
-    pub fn for_weekday(&self, weekday: Weekday) -> bool {
-        self.weekday() == weekday
+    pub fn for_date(&self, date: Date<Local>) -> bool {
+        self.for_date_today(date, Local::today())
+    }
+
+    // This method is used for unit testing because for tests supplying today is necessary.
+    fn for_date_today(&self, date: Date<Local>, today: Date<Local>) -> bool {
+        date >= self.date && (date == today || self.date > today)
     }
 
     /// Gets the `body` of the `Todo`.
@@ -281,6 +296,19 @@ mod tests {
     fn todo_displays_correctly() {
         let todo = Todo::new_undated("Todo".to_string());
         assert_eq!(todo.to_string(), "Todo (ID: 0)".to_string());
+    }
+
+    #[test]
+    fn todo_for_date_returns_true_for_correct_dates() {
+        let todo = Todo::new_specific_date("Friday".to_string(), Local.ymd(2022, 6, 10));
+
+        let today = Local.ymd(2022, 6, 10);
+
+        assert!(todo.for_date_today(today, today));
+        assert!(todo.for_date_today(today, today.pred()));
+        assert!(!todo.for_date_today(today, today.succ()));
+        assert!(todo.for_date_today(today.succ(), today.succ()));
+        assert!(!todo.for_date_today(today.succ(), today));
     }
 
     #[test]
