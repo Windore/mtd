@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn list_remove_todo_does_nothing_with_nonexistent_id() {
+    fn tdlist_remove_todo_does_nothing_with_nonexistent_id() {
         let mut list = TdList::new();
 
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
