@@ -109,7 +109,7 @@ impl Todo {
     }
 
     /// Sets the `id` of the `Todo`.
-    pub fn set_id(&mut self, id: u64) {
+    fn set_id(&mut self, id: u64) {
         self.id = id;
     }
 
@@ -309,6 +309,7 @@ impl Display for Task {
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
 /// `Task`s have `id`s that match their index within the `TdList`.
+#[derive(Debug)]
 pub struct TdList {
     todos: Vec<Todo>,
     tasks: Vec<Task>,
@@ -368,6 +369,7 @@ impl TdList {
         }
     }
 
+    /// Returns a mutable reference to a `Todo`.
     pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
         self.todos.get_mut(id as usize)
     }
