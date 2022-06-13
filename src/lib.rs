@@ -307,7 +307,8 @@ impl Display for Task {
     }
 }
 
-/// A synchronizable list used for containing and managing all `Todo`s and `Task`s.
+/// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
+/// `Task`s have `id`s that match their index within the `TdList`.
 pub struct TdList {
     todos: Vec<Todo>,
     tasks: Vec<Task>,
@@ -319,23 +320,23 @@ impl TdList {
         Self { todos: Vec::new(), tasks: Vec::new() }
     }
 
-    /// Gets all the `Todo`s in the list.
+    /// Gets all the `Todo`s in the list. A `Todo`'s id matches its index in this list.
     pub fn todos(&self) -> &Vec<Todo> {
         &self.todos
     }
 
-    /// Gets all the `Task`s in the list.
+    /// Gets all the `Task`s in the list. A `Task`'s id matches its index in this list.
     pub fn tasks(&self) -> &Vec<Task> {
         &self.tasks
     }
 
-    /// Adds a `Todo` to the list.
+    /// Adds a `Todo` to the list and modifies its id.
     pub fn add_todo(&mut self, mut todo: Todo) {
         todo.set_id(self.todos.len() as u64);
         self.todos.push(todo);
     }
 
-    /// Adds a `Task` to the list.
+    /// Adds a `Task` to the list and modifies its id.
     pub fn add_task(&mut self, mut task: Task) {
         task.set_id(self.tasks.len() as u64);
         self.tasks.push(task);
