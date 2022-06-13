@@ -17,11 +17,12 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 /// Represents a one-time task to be done at a specific date. The date is specified as a weekday
 /// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
 /// `Todo` will show up for the current day.
+#[derive(Debug)]
 pub struct Todo {
     body: String,
     date: Date<Local>,
     id: u64,
-    done: bool,
+    done: Option<Date<Local>>,
 }
 
 impl Todo {
@@ -31,7 +32,7 @@ impl Todo {
             body,
             date: Local::today(),
             id: 0,
-            done: false,
+            done: None,
         }
     }
 
@@ -42,7 +43,7 @@ impl Todo {
             body,
             date: weekday_to_date(weekday, Local::today()),
             id: 0,
-            done: false,
+            done: None,
         }
     }
 
@@ -53,7 +54,7 @@ impl Todo {
             body,
             date,
             id: 0,
-            done: false,
+            done: None,
         }
     }
 
@@ -115,12 +116,35 @@ impl Todo {
 
     /// Returns `true` if the `Todo` is done.
     pub fn done(&self) -> bool {
-        self.done
+        self.done.is_some()
     }
 
     /// Sets the done state of the `Todo`.
     pub fn set_done(&mut self, done: bool) {
-        self.done = done;
+        self.set_done_wtd(done, Local::today());
+    }
+
+    // Used for unit testing with a supplied today
+    fn set_done_wtd(&mut self, done: bool, today: Date<Local>) {
+        if done {
+            self.done = Some(today);
+        } else {
+            self.done = None;
+        }
+    }
+
+    /// Returns `true` if the `Todo` can be removed. A `Todo` can be removed one day after its
+    /// completion.
+    pub fn can_remove(&self) -> bool {
+        self.can_remove_wtd(Local::today())
+    }
+
+    fn can_remove_wtd(&self, today: Date<Local>) -> bool {
+        if let Some(done_date) = self.done {
+            today > done_date
+        } else {
+            false
+        }
     }
 }
 
@@ -131,6 +155,7 @@ impl Display for Todo {
 }
 
 /// Represents a reoccurring task for the given weekday(s).
+#[derive(Debug)]
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
@@ -417,6 +442,16 @@ mod tests {
         assert!(!todo.for_date_today(today, today.succ())); // Todo is not for the given date after the given date
         assert!(todo.for_date_today(today.succ(), today.succ())); // Todo is for the following date one day after the given date
         assert!(!todo.for_date_today(today.succ(), today)); // Todo is not for the following date because it is already for today
+    }
+
+    #[test]
+    fn todo_can_remove_returns_true_only_after_one_day_from_completion() {
+        let mut todo = Todo::new_specific_date("Todo".to_string(), Local.ymd(2022, 4, 25));
+        todo.set_done_wtd(true, Local.ymd(2022, 4, 26));
+
+        assert!(!todo.can_remove_wtd(Local.ymd(2022, 4, 26)));
+        assert!(todo.can_remove_wtd(Local.ymd(2022, 4, 27)));
+        assert!(todo.can_remove_wtd(Local.ymd(2022, 4, 28)));
     }
 
     #[test]
