@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::os::unix::raw::time_t;
 
 use chrono::{Date, Datelike, Local, Weekday};
 
@@ -48,6 +47,7 @@ impl Todo {
     }
 
     // Used for unit testing with non-today dependant date
+    #[cfg(test)]
     fn new_specific_date(body: String, date: Date<Local>) -> Todo {
         Todo {
             body,
