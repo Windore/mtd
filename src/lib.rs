@@ -367,6 +367,10 @@ impl TdList {
             item.set_id(new_id as u64);
         }
     }
+
+    pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
+        self.todos.get_mut(id as usize)
+    }
 }
 
 #[cfg(test)]
@@ -524,5 +528,18 @@ mod tests {
         assert_eq!(list.tasks()[1].id(), 1);
         assert_eq!(list.tasks()[0].body(), "Task 0");
         assert_eq!(list.tasks()[1].body(), "Task 1");
+    }
+
+    #[test]
+    fn tdlist_get_todo_mut_returns_mutable() {
+        let mut list = TdList::new();
+
+        list.add_todo(Todo::new_undated("Todo".to_string()));
+
+        assert_eq!(list.todos()[0].body(), "Todo");
+
+        list.get_todo_mut(0).unwrap().set_body("To-Do".to_string());
+
+        assert_eq!(list.todos()[0].body(), "To-Do");
     }
 }
