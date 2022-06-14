@@ -398,6 +398,11 @@ impl TdList {
     pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
         self.todos.get_mut(id as usize)
     }
+
+    /// Returns a mutable reference to a `Task`.
+    pub fn get_task_mut(&mut self, id: u64) -> Option<&mut Task> {
+        self.tasks.get_mut(id as usize)
+    }
 }
 
 #[cfg(test)]
@@ -578,5 +583,18 @@ mod tests {
         list.get_todo_mut(0).unwrap().set_body("To-Do".to_string());
 
         assert_eq!(list.todos()[0].body(), "To-Do");
+    }
+
+    #[test]
+    fn tdlist_get_task_mut_returns_mutable() {
+        let mut list = TdList::new();
+
+        list.add_task(Task::new("Task".to_string(), vec![Weekday::Mon]));
+
+        assert_eq!(list.tasks()[0].body(), "Task");
+
+        list.get_task_mut(0).unwrap().set_body("Ta-Sk".to_string());
+
+        assert_eq!(list.tasks()[0].body(), "Ta-Sk");
     }
 }
