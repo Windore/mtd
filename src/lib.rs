@@ -1,10 +1,34 @@
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 use chrono::{Date, Datelike, Local, Weekday};
 
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
+
+/// Custom errors returned by this crate.
+#[derive(Debug, PartialEq)]
+pub enum MtdError {
+    /// Indicates that no `Todo` with the given `id` exists.
+    NoTodoWithGivenId(u64),
+    /// Indicates that no `Task` with the given `id` exists.
+    NoTaskWithGivenId(u64),
+}
+
+impl Display for MtdError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MtdError::NoTodoWithGivenId(id) => {
+                write!(f, "No Todo with the given id: \"{}\" found.", id)
+            }
+            MtdError::NoTaskWithGivenId(id) => {
+                write!(f, "No Task with the given id: \"{}\" found.", id)
+            }
+        }
+    }
+}
+
+impl std::error::Error for MtdError {}
 
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
 /// tomorrows date. Today is represented by the current weekday.
@@ -421,15 +445,22 @@ impl TdList {
     /// Removes the `Todo` that matches the given id. The id matches the index of the `Todo`. If no
     /// such `Todo` exists, does nothing. (Note for clients: this method only marks items as removed,
     /// to actually remove them, the TdList must be synchronized)
-    // TODO: Return a result indicating if the removed item exists.
-    pub fn remove_todo(&mut self, id: u64) {
+    pub fn remove_todo(&mut self, id: u64) -> Result<(), MtdError> {
         if let Some(todo) = self.todos.get_mut(id as usize) {
             if self.server {
                 self.todos.remove(id as usize);
                 self.map_todo_indices_to_ids();
+                Ok(())
             } else {
-                todo.state = ItemState::Removed;
+                if todo.state == ItemState::Removed {
+                    Err(MtdError::NoTodoWithGivenId(id))
+                } else {
+                    todo.state = ItemState::Removed;
+                    Ok(())
+                }
             }
+        } else {
+            Err(MtdError::NoTodoWithGivenId(id))
         }
     }
 
@@ -442,14 +473,22 @@ impl TdList {
     /// Removes the `Task` that matches the given id. The id matches the index of the `Task`. If no
     /// such `Task` exists, does nothing. (Note for clients: this method only marks items as removed,
     /// to actually remove them, the TdList must be synchronized)
-    pub fn remove_task(&mut self, id: u64) {
+    pub fn remove_task(&mut self, id: u64) -> Result<(), MtdError>{
         if let Some(task) = self.tasks.get_mut(id as usize) {
             if self.server {
                 self.tasks.remove(id as usize);
                 self.map_task_indices_to_ids();
+                Ok(())
             } else {
-                task.state = ItemState::Removed;
+                if task.state == ItemState::Removed {
+                    Err(MtdError::NoTaskWithGivenId(id))
+                } else {
+                    task.state = ItemState::Removed;
+                    Ok(())
+                }
             }
+        } else {
+            Err(MtdError::NoTaskWithGivenId(id))
         }
     }
 
@@ -566,7 +605,7 @@ impl TdList {
 mod tests {
     use chrono::{Local, TimeZone, Weekday};
 
-    use crate::{Task, TdList, Todo, weekday_to_date};
+    use crate::{MtdError, Task, TdList, Todo, weekday_to_date};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
@@ -660,7 +699,7 @@ mod tests {
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
         list.add_todo(Todo::new_undated("Todo 2".to_string()));
 
-        list.remove_todo(1);
+        list.remove_todo(1).unwrap();
 
         assert_eq!(list.todos()[0].body(), "Todo 0");
         assert_eq!(list.todos()[1].body(), "Todo 2");
@@ -668,18 +707,13 @@ mod tests {
     }
 
     #[test]
-    fn tdlist_remove_todo_does_nothing_with_nonexistent_id() {
+    fn tdlist_remove_todo_returns_err_nonexistent_id() {
         let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
 
-        list.remove_todo(2);
-
-        assert_eq!(list.todos()[0].id(), 0);
-        assert_eq!(list.todos()[1].id(), 1);
-        assert_eq!(list.todos()[0].body(), "Todo 0");
-        assert_eq!(list.todos()[1].body(), "Todo 1");
+        assert_eq!(list.remove_todo(2).err().unwrap(), MtdError::NoTodoWithGivenId(2));
     }
 
     #[test]
@@ -703,7 +737,7 @@ mod tests {
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 2".to_string(), vec![Weekday::Mon]));
 
-        list.remove_task(1);
+        list.remove_task(1).unwrap();
 
         assert_eq!(list.tasks()[0].body(), "Task 0");
         assert_eq!(list.tasks()[1].body(), "Task 2");
@@ -711,18 +745,13 @@ mod tests {
     }
 
     #[test]
-    fn tdlist_remove_task_does_nothing_with_nonexistent_id() {
+    fn tdlist_remove_task_returns_err_with_nonexistent_id() {
         let mut list = TdList::new_client();
 
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
 
-        list.remove_task(2);
-
-        assert_eq!(list.tasks()[0].id(), 0);
-        assert_eq!(list.tasks()[1].id(), 1);
-        assert_eq!(list.tasks()[0].body(), "Task 0");
-        assert_eq!(list.tasks()[1].body(), "Task 1");
+        assert_eq!(list.remove_task(2).err().unwrap(), MtdError::NoTaskWithGivenId(2));
     }
 
     #[test]
@@ -839,7 +868,7 @@ mod tests {
         let mut list = tdlist_with_done_and_undone();
 
         list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
-        list.remove_task(1);
+        list.remove_task(1).unwrap();
 
         assert_eq!(list.todos.len(), 4);
         assert_eq!(list.tasks.len(), 2);
@@ -856,7 +885,7 @@ mod tests {
         list.server = true;
 
         list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
-        list.remove_task(1);
+        list.remove_task(1).unwrap();
 
         assert_eq!(list.todos.len(), 2);
         assert_eq!(list.tasks.len(), 1);
