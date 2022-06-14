@@ -569,7 +569,8 @@ impl TdList {
     }
 
     /// Removes all `Todo`s that are done and at least a day has passed since their completion.
-    /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`.
+    /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`. This is called
+    /// automatically every sync.
     /// (Note for clients: this method only marks items as removed, to actually
     /// remove them, the TdList must be synchronized)
     pub fn remove_old_todos(&mut self) {
@@ -594,8 +595,9 @@ impl TdList {
     }
 
     /// Synchronizes the list with itself actually removing items. Synchronizing may change the `id`s
-    /// of both `Todo`s and `Task`s.
+    /// of both `Todo`s and `Task`s. Additionally removes old `Todo`s.
     pub fn self_sync(&mut self) {
+        self.remove_old_todos();
         self.todos.retain(|todo| todo.state != ItemState::Removed);
         self.tasks.retain(|task| task.state != ItemState::Removed);
     }
@@ -889,5 +891,16 @@ mod tests {
 
         assert_eq!(list.todos.len(), 2);
         assert_eq!(list.tasks.len(), 1);
+    }
+
+    #[test]
+    fn tdlist_sync_always_removes_old_todos() {
+        let mut list = tdlist_with_done_and_undone();
+
+        assert_eq!(list.todos.len(), 4);
+
+        list.self_sync();
+
+        assert_eq!(list.todos.len(), 2);
     }
 }
