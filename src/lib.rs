@@ -353,13 +353,23 @@ impl TdList {
     }
 
     /// Gets all the `Todo`s in the list. A `Todo`'s id matches its index in this list.
-    pub fn todos(&self) -> &Vec<Todo> {
-        &self.todos
+    pub fn todos(&self) -> Vec<&Todo> {
+        let mut todos = Vec::new();
+        for todo in &self.todos {
+            todos.push(todo);
+        }
+
+        todos
     }
 
     /// Gets all the `Task`s in the list. A `Task`'s id matches its index in this list.
-    pub fn tasks(&self) -> &Vec<Task> {
-        &self.tasks
+    pub fn tasks(&self) -> Vec<&Task> {
+        let mut tasks = Vec::new();
+        for task in &self.tasks {
+            tasks.push(task);
+        }
+
+        tasks
     }
 
     /// Adds a `Todo` to the list and modifies its id.
@@ -755,8 +765,8 @@ mod tests {
 
         list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
 
-        assert_eq!(list.todos()[0], list_containing_same_todos_for_eq_check.todos[0]);
-        assert_eq!(list.todos()[1], list_containing_same_todos_for_eq_check.todos[1]);
+        assert_eq!(list.todos()[0], list_containing_same_todos_for_eq_check.todos()[0]);
+        assert_eq!(list.todos()[1], list_containing_same_todos_for_eq_check.todos()[1]);
         assert_eq!(list.todos().len(), 2);
     }
 }
