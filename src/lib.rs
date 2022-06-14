@@ -76,11 +76,11 @@ impl Todo {
     /// assert!(todo_for_tomorrow.for_date(Local::today().succ()));
     /// ```
     pub fn for_date(&self, date: Date<Local>) -> bool {
-        self.for_date_today(date, Local::today())
+        self.for_date_wtd(date, Local::today())
     }
 
     // This method is used for unit testing because for tests supplying today is necessary.
-    fn for_date_today(&self, date: Date<Local>, today: Date<Local>) -> bool {
+    fn for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> bool {
         date >= self.date && (date == today || self.date > today)
     }
 
@@ -442,11 +442,11 @@ mod tests {
         // The following 5 asserts could each be their own unit test but I'm to lazy to do it so
         // instead I just added some comments explaining the tests
 
-        assert!(todo.for_date_today(today, today)); // Todo is for the given date on the same day
-        assert!(todo.for_date_today(today, today.pred())); // Todo is for the given date before the given date
-        assert!(!todo.for_date_today(today, today.succ())); // Todo is not for the given date after the given date
-        assert!(todo.for_date_today(today.succ(), today.succ())); // Todo is for the following date one day after the given date
-        assert!(!todo.for_date_today(today.succ(), today)); // Todo is not for the following date because it is already for today
+        assert!(todo.for_date_wtd(today, today)); // Todo is for the given date on the same day
+        assert!(todo.for_date_wtd(today, today.pred())); // Todo is for the given date before the given date
+        assert!(!todo.for_date_wtd(today, today.succ())); // Todo is not for the given date after the given date
+        assert!(todo.for_date_wtd(today.succ(), today.succ())); // Todo is for the following date one day after the given date
+        assert!(!todo.for_date_wtd(today.succ(), today)); // Todo is not for the following date because it is already for today
     }
 
     #[test]
