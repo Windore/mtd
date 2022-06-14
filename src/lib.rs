@@ -44,7 +44,7 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 /// Represents a one-time task to be done at a specific date. The date is specified as a weekday
 /// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
 /// `Todo` will show up for the current day.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Todo {
     body: String,
     date: Date<Local>,
@@ -61,7 +61,7 @@ impl Todo {
             date: Local::today(),
             id: 0,
             done: None,
-            state: ItemState::New,
+            state: ItemState::Unchanged,
         }
     }
 
@@ -73,7 +73,7 @@ impl Todo {
             date: weekday_to_date(weekday, Local::today()),
             id: 0,
             done: None,
-            state: ItemState::New,
+            state: ItemState::Unchanged,
         }
     }
 
@@ -85,7 +85,7 @@ impl Todo {
             date,
             id: 0,
             done: None,
-            state: ItemState::New,
+            state: ItemState::Unchanged,
         }
     }
 
@@ -139,11 +139,6 @@ impl Todo {
         self.date = weekday_to_date(weekday, Local::today());
     }
 
-    /// Sets the `id` of the `Todo`.
-    fn set_id(&mut self, id: u64) {
-        self.id = id;
-    }
-
     /// Returns `true` if the `Todo` is done.
     pub fn done(&self) -> bool {
         self.done.is_some()
@@ -184,7 +179,7 @@ impl Display for Todo {
 }
 
 /// Represents a reoccurring task for the given weekday(s).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
@@ -203,7 +198,7 @@ impl Task {
         if weekdays.is_empty() {
             panic!("Cannot create a task without specifying at least one weekday.")
         }
-        Task { body, weekdays, id: 0, done_map: HashMap::new(), state: ItemState::New }
+        Task { body, weekdays, id: 0, done_map: HashMap::new(), state: ItemState::Unchanged }
     }
 
     /// Gets the `body` of the `Task`.
@@ -229,11 +224,6 @@ impl Task {
     /// Sets the `weekdays` of the `Task`.
     pub fn set_weekdays(&mut self, weekdays: Vec<Weekday>) {
         self.weekdays = weekdays;
-    }
-
-    /// Sets the `id` of the `Task`.
-    pub fn set_id(&mut self, id: u64) {
-        self.id = id;
     }
 
     /// Adds a weekday to the weekdays list.
@@ -362,150 +352,169 @@ impl Display for Task {
     }
 }
 
-/// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
-/// `Task`s have `id`s that match their index within the internal `Vec`s of the `TdList`.
-#[derive(Debug, PartialEq)]
-pub struct TdList {
-    todos: Vec<Todo>,
-    tasks: Vec<Task>,
-    server: bool,
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 enum ItemState {
     New,
     Removed,
     Unchanged,
 }
 
-/* TdList contains some amount of code duplication, but Tasks and Todos are imo too different
- * to abstract to a common trait with a templated TdList<trait>. Therefore the current amount of
- * duplication will be accepted.
- */
+trait SyncItem {
+    fn set_state(&mut self, state: ItemState);
+    fn state(&self) -> ItemState;
+    fn set_id(&mut self, id: u64);
+}
+
+impl SyncItem for Todo{
+    fn set_state(&mut self, state: ItemState) {
+        self.state = state;
+    }
+
+    fn state(&self) -> ItemState {
+        self.state
+    }
+
+    fn set_id(&mut self, id: u64) {
+        self.id = id;
+    }
+}
+
+impl SyncItem for Task {
+    fn set_state(&mut self, state: ItemState) {
+        self.state = state;
+    }
+
+    fn state(&self) -> ItemState {
+        self.state
+    }
+
+    fn set_id(&mut self, id: u64) {
+        self.id = id;
+    }
+}
+
+#[derive(Debug)]
+struct SyncList<T: SyncItem + Clone> {
+    items: Vec<T>,
+    server: bool,
+}
+
+impl<T: SyncItem + Clone> SyncList<T> {
+    fn new(server: bool) -> Self {
+        Self {
+            items: Vec::new(),
+            server,
+        }
+    }
+    fn add(&mut self, mut item: T) {
+        if self.server {
+            item.set_state(ItemState::Unchanged);
+        } else {
+            item.set_state(ItemState::New);
+        }
+        item.set_id(self.items.len() as u64);
+        self.items.push(item);
+    }
+    fn mark_removed(&mut self, id: u64) -> Result<(), ()> {
+        if let Some(item) = self.items.get_mut(id as usize) {
+            if self.server {
+                self.items.remove(id as usize);
+                self.map_indices_to_ids();
+                Ok(())
+            } else {
+                if item.state() == ItemState::Removed {
+                    Err(())
+                } else {
+                    item.set_state(ItemState::Removed);
+                    Ok(())
+                }
+            }
+        } else {
+            Err(())
+        }
+    }
+    fn map_indices_to_ids(&mut self) {
+        for (new_id, item) in self.items.iter_mut().enumerate() {
+            item.set_id(new_id as u64);
+        }
+    }
+    fn items(&self) -> Vec<&T> {
+        let mut items = Vec::new();
+        for item in &self.items {
+            if item.state() != ItemState::Removed {
+                items.push(item);
+            }
+        }
+
+        items
+    }
+    fn get_item_mut(&mut self, id: u64) -> Option<&mut T> {
+        self.items.get_mut(id as usize)
+    }
+}
+
+/// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
+/// `Task`s have `id`s that match their index within the internal `Vec`s of the `TdList`.
+#[derive(Debug)]
+pub struct TdList {
+    todos: SyncList<Todo>,
+    tasks: SyncList<Task>,
+    server: bool,
+}
 
 impl TdList {
     /// Creates a new empty client `TdList`.
     pub fn new_client() -> Self {
-        Self { todos: Vec::new(), tasks: Vec::new(), server: false }
+        Self { todos: SyncList::new(false), tasks: SyncList::new(false), server: false }
     }
 
     /// Creates a new empty server `TdList`.
     pub fn new_server() -> Self {
-        Self { todos: Vec::new(), tasks: Vec::new(), server: true }
+        Self { todos: SyncList::new(true), tasks: SyncList::new(true), server: true }
     }
 
     /// Gets all the `Todo`s in the list. A `Todo`'s id matches its index in this list.
     pub fn todos(&self) -> Vec<&Todo> {
-        let mut todos = Vec::new();
-        for todo in &self.todos {
-            if todo.state != ItemState::Removed {
-                todos.push(todo);
-            }
-        }
-
-        todos
+        self.todos.items()
     }
 
     /// Gets all the `Task`s in the list. A `Task`'s id matches its index in this list.
     pub fn tasks(&self) -> Vec<&Task> {
-        let mut tasks = Vec::new();
-        for task in &self.tasks {
-            if task.state != ItemState::Removed {
-                tasks.push(task);
-            }
-        }
-
-        tasks
+        self.tasks.items()
     }
 
     /// Adds a `Todo` to the list and modifies its id.
-    pub fn add_todo(&mut self, mut todo: Todo) {
-        if self.server {
-            todo.state = ItemState::Unchanged;
-        } else {
-            todo.state = ItemState::New;
-        }
-
-        todo.set_id(self.todos.len() as u64);
-        self.todos.push(todo);
+    pub fn add_todo(&mut self, todo: Todo) {
+        self.todos.add(todo);
     }
 
     /// Adds a `Task` to the list and modifies its id.
-    pub fn add_task(&mut self, mut task: Task) {
-        if self.server {
-            task.state = ItemState::Unchanged;
-        } else {
-            task.state = ItemState::New;
-        }
-
-        task.set_id(self.tasks.len() as u64);
-        self.tasks.push(task);
+    pub fn add_task(&mut self, task: Task) {
+        self.tasks.add(task)
     }
 
     /// Removes the `Todo` that matches the given id. The id matches the index of the `Todo`. If no
     /// such `Todo` exists, does nothing. (Note for clients: this method only marks items as removed,
     /// to actually remove them, the TdList must be synchronized)
     pub fn remove_todo(&mut self, id: u64) -> Result<(), MtdError> {
-        if let Some(todo) = self.todos.get_mut(id as usize) {
-            if self.server {
-                self.todos.remove(id as usize);
-                self.map_todo_indices_to_ids();
-                Ok(())
-            } else {
-                if todo.state == ItemState::Removed {
-                    Err(MtdError::NoTodoWithGivenId(id))
-                } else {
-                    todo.state = ItemState::Removed;
-                    Ok(())
-                }
-            }
-        } else {
-            Err(MtdError::NoTodoWithGivenId(id))
-        }
-    }
-
-    fn map_todo_indices_to_ids(&mut self) {
-        for (new_id, item) in self.todos.iter_mut().enumerate() {
-            item.set_id(new_id as u64);
-        }
+        self.todos.mark_removed(id).map_err(|_| MtdError::NoTodoWithGivenId(id))
     }
 
     /// Removes the `Task` that matches the given id. The id matches the index of the `Task`. If no
     /// such `Task` exists, does nothing. (Note for clients: this method only marks items as removed,
     /// to actually remove them, the TdList must be synchronized)
-    pub fn remove_task(&mut self, id: u64) -> Result<(), MtdError>{
-        if let Some(task) = self.tasks.get_mut(id as usize) {
-            if self.server {
-                self.tasks.remove(id as usize);
-                self.map_task_indices_to_ids();
-                Ok(())
-            } else {
-                if task.state == ItemState::Removed {
-                    Err(MtdError::NoTaskWithGivenId(id))
-                } else {
-                    task.state = ItemState::Removed;
-                    Ok(())
-                }
-            }
-        } else {
-            Err(MtdError::NoTaskWithGivenId(id))
-        }
-    }
-
-    fn map_task_indices_to_ids(&mut self) {
-        for (new_id, item) in self.tasks.iter_mut().enumerate() {
-            item.set_id(new_id as u64);
-        }
+    pub fn remove_task(&mut self, id: u64) -> Result<(), MtdError> {
+        self.tasks.mark_removed(id).map_err(|_| MtdError::NoTaskWithGivenId(id))
     }
 
     /// Returns a mutable reference to a `Todo`.
     pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
-        self.todos.get_mut(id as usize)
+        self.todos.get_item_mut(id)
     }
 
     /// Returns a mutable reference to a `Task`.
     pub fn get_task_mut(&mut self, id: u64) -> Option<&mut Task> {
-        self.tasks.get_mut(id as usize)
+        self.tasks.get_item_mut(id)
     }
 
     /// Returns all `Todo`s for a given date that are not yet done.
@@ -521,7 +530,7 @@ impl TdList {
     fn undone_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
         let mut undone_todos = Vec::new();
 
-        for todo in &self.todos {
+        for todo in self.todos.items() {
             if todo.for_date_wtd(date, today) && !todo.done() {
                 undone_todos.push(todo);
             }
@@ -533,7 +542,7 @@ impl TdList {
     fn done_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
         let mut done_todos = Vec::new();
 
-        for todo in &self.todos {
+        for todo in self.todos.items() {
             if todo.for_date_wtd(date, today) && todo.done() {
                 done_todos.push(todo);
             }
@@ -546,7 +555,7 @@ impl TdList {
     pub fn undone_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
         let mut undone_tasks = Vec::new();
 
-        for task in &self.tasks {
+        for task in self.tasks.items() {
             if task.for_date(date) && !task.done(date) {
                 undone_tasks.push(task);
             }
@@ -559,7 +568,7 @@ impl TdList {
     pub fn done_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
         let mut done_tasks = Vec::new();
 
-        for task in &self.tasks {
+        for task in self.tasks.items() {
             if task.for_date(date) && task.done(date) {
                 done_tasks.push(task);
             }
@@ -580,13 +589,13 @@ impl TdList {
     fn remove_old_todos_wtd(&mut self, today: Date<Local>) {
         if self.server {
             // This actually removes items...
-            self.todos = self.todos
+            self.todos.items = self.todos.items
                 .drain(..)
                 .filter(|todo| { !todo.can_remove_wtd(today) })
                 .collect()
         } else {
             // ...while this only marks them as removed
-            for todo in &mut self.todos {
+            for todo in &mut self.todos.items {
                 if todo.can_remove_wtd(today) {
                     todo.state = ItemState::Removed;
                 }
@@ -598,8 +607,8 @@ impl TdList {
     /// of both `Todo`s and `Task`s. Additionally removes old `Todo`s.
     pub fn self_sync(&mut self) {
         self.remove_old_todos();
-        self.todos.retain(|todo| todo.state != ItemState::Removed);
-        self.tasks.retain(|task| task.state != ItemState::Removed);
+        self.todos.items.retain(|todo| todo.state != ItemState::Removed);
+        self.tasks.items.retain(|task| task.state != ItemState::Removed);
     }
 }
 
@@ -872,35 +881,37 @@ mod tests {
         list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
         list.remove_task(1).unwrap();
 
-        assert_eq!(list.todos.len(), 4);
-        assert_eq!(list.tasks.len(), 2);
+        assert_eq!(list.todos.items.len(), 4);
+        assert_eq!(list.tasks.items.len(), 2);
 
         list.self_sync();
 
-        assert_eq!(list.todos.len(), 2);
-        assert_eq!(list.tasks.len(), 1);
+        assert_eq!(list.todos.items.len(), 2);
+        assert_eq!(list.tasks.items.len(), 1);
     }
 
     #[test]
     fn tdlist_server_always_removes_items() {
         let mut list = tdlist_with_done_and_undone();
         list.server = true;
+        list.todos.server = true;
+        list.tasks.server = true;
 
         list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
         list.remove_task(1).unwrap();
 
-        assert_eq!(list.todos.len(), 2);
-        assert_eq!(list.tasks.len(), 1);
+        assert_eq!(list.todos.items.len(), 2);
+        assert_eq!(list.tasks.items.len(), 1);
     }
 
     #[test]
     fn tdlist_sync_always_removes_old_todos() {
         let mut list = tdlist_with_done_and_undone();
 
-        assert_eq!(list.todos.len(), 4);
+        assert_eq!(list.todos.items.len(), 4);
 
         list.self_sync();
 
-        assert_eq!(list.todos.len(), 2);
+        assert_eq!(list.todos.items.len(), 2);
     }
 }
