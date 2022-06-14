@@ -587,19 +587,13 @@ impl TdList {
     }
 
     fn remove_old_todos_wtd(&mut self, today: Date<Local>) {
-        if self.server {
-            // This actually removes items...
-            self.todos.items = self.todos.items
-                .drain(..)
-                .filter(|todo| { !todo.can_remove_wtd(today) })
-                .collect()
-        } else {
-            // ...while this only marks them as removed
-            for todo in &mut self.todos.items {
-                if todo.can_remove_wtd(today) {
-                    todo.state = ItemState::Removed;
-                }
+        for todo in &mut self.todos.items {
+            if todo.can_remove_wtd(today) {
+                todo.state = ItemState::Removed;
             }
+        }
+        if self.server {
+            self.todos.items.retain(|todo| todo.state != ItemState::Removed);
         }
     }
 
@@ -763,32 +757,6 @@ mod tests {
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
 
         assert_eq!(list.remove_task(2).err().unwrap(), MtdError::NoTaskWithGivenId(2));
-    }
-
-    #[test]
-    fn tdlist_get_todo_mut_returns_mutable() {
-        let mut list = TdList::new_client();
-
-        list.add_todo(Todo::new_undated("Todo".to_string()));
-
-        assert_eq!(list.todos()[0].body(), "Todo");
-
-        list.get_todo_mut(0).unwrap().set_body("To-Do".to_string());
-
-        assert_eq!(list.todos()[0].body(), "To-Do");
-    }
-
-    #[test]
-    fn tdlist_get_task_mut_returns_mutable() {
-        let mut list = TdList::new_client();
-
-        list.add_task(Task::new("Task".to_string(), vec![Weekday::Mon]));
-
-        assert_eq!(list.tasks()[0].body(), "Task");
-
-        list.get_task_mut(0).unwrap().set_body("Ta-Sk".to_string());
-
-        assert_eq!(list.tasks()[0].body(), "Ta-Sk");
     }
 
     fn tdlist_with_done_and_undone() -> TdList {
