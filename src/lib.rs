@@ -3,6 +3,9 @@ use std::fmt::{Display, Formatter};
 
 use chrono::{Date, Datelike, Local, Weekday};
 
+// Methods ending with _wtd are used for unit testing and internal implementations. They allow
+// supplying today with any date.
+
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
 /// tomorrows date. Today is represented by the current weekday.
 fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
@@ -17,7 +20,7 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 /// Represents a one-time task to be done at a specific date. The date is specified as a weekday
 /// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
 /// `Todo` will show up for the current day.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Todo {
     body: String,
     date: Date<Local>,
@@ -79,7 +82,6 @@ impl Todo {
         self.for_date_wtd(date, Local::today())
     }
 
-    // This method is used for unit testing because for tests supplying today is necessary.
     fn for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> bool {
         date >= self.date && (date == today || self.date > today)
     }
@@ -124,7 +126,6 @@ impl Todo {
         self.set_done_wtd(done, Local::today());
     }
 
-    // Used for unit testing with a supplied today
     fn set_done_wtd(&mut self, done: bool, today: Date<Local>) {
         if done {
             self.done = Some(today);
@@ -155,7 +156,7 @@ impl Display for Todo {
 }
 
 /// Represents a reoccurring task for the given weekday(s).
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
@@ -333,12 +334,17 @@ impl Display for Task {
 }
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
-/// `Task`s have `id`s that match their index within the `TdList`.
+/// `Task`s have `id`s that match their index within the internal `Vec`s of the `TdList`.
 #[derive(Debug)]
 pub struct TdList {
     todos: Vec<Todo>,
     tasks: Vec<Task>,
 }
+
+/* TdList contains some amount of code duplication, but Tasks and Todos are imo too different
+ * to abstract to a common trait with a templated TdList<trait>. Therefore the current amount of
+ * duplication will be accepted.
+ */
 
 impl TdList {
     /// Creates a new empty `TdList`.
@@ -402,6 +408,66 @@ impl TdList {
     /// Returns a mutable reference to a `Task`.
     pub fn get_task_mut(&mut self, id: u64) -> Option<&mut Task> {
         self.tasks.get_mut(id as usize)
+    }
+
+    /// Returns all `Todo`s for a given date that are not yet done.
+    pub fn undone_todos_for_date(&self, date: Date<Local>) -> Vec<&Todo> {
+        self.undone_todos_for_date_wtd(date, Local::today())
+    }
+
+    /// Returns all `Todo`s for a given date that are done.
+    pub fn done_todos_for_date(&self, date: Date<Local>) -> Vec<&Todo> {
+        self.done_todos_for_date_wtd(date, Local::today())
+    }
+
+    fn undone_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
+        let mut undone_todos = Vec::new();
+
+        for todo in &self.todos {
+            if todo.for_date_wtd(date, today) && !todo.done() {
+                undone_todos.push(todo);
+            }
+        }
+
+        undone_todos
+    }
+
+    fn done_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
+        let mut done_todos = Vec::new();
+
+        for todo in &self.todos {
+            if todo.for_date_wtd(date, today) && todo.done() {
+                done_todos.push(todo);
+            }
+        }
+
+        done_todos
+    }
+
+    /// Returns all `Task`s for a given date that are not yet done.
+    pub fn undone_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
+        let mut undone_tasks = Vec::new();
+
+        for task in &self.tasks {
+            if task.for_date(date) && !task.done(date) {
+                undone_tasks.push(task);
+            }
+        }
+
+        undone_tasks
+    }
+
+    /// Returns all `Task`s for a given date that are done.
+    pub fn done_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
+        let mut done_tasks = Vec::new();
+
+        for task in &self.tasks {
+            if task.for_date(date) && task.done(date) {
+                done_tasks.push(task);
+            }
+        }
+
+        done_tasks
     }
 }
 
@@ -596,5 +662,72 @@ mod tests {
         list.get_task_mut(0).unwrap().set_body("Ta-Sk".to_string());
 
         assert_eq!(list.tasks()[0].body(), "Ta-Sk");
+    }
+
+    fn tdlist_with_done_and_undone() -> TdList {
+        let mut list = TdList::new();
+
+        list.add_todo(Todo::new_specific_date("Undone 1".to_string(), Local.ymd(2021, 4, 1)));
+        list.add_todo(Todo::new_specific_date("Undone 2".to_string(), Local.ymd(2021, 3, 29)));
+        list.add_todo(Todo::new_specific_date("Done 1".to_string(), Local.ymd(2021, 4, 1)));
+        list.add_todo(Todo::new_specific_date("Done 2".to_string(), Local.ymd(2021, 3, 30)));
+
+        list.get_todo_mut(2).unwrap().set_done_wtd(true, Local.ymd(2021, 4, 1));
+        list.get_todo_mut(3).unwrap().set_done_wtd(true, Local.ymd(2021, 4, 1));
+
+        list.add_task(Task::new("Undone 1".to_string(), vec![Weekday::Thu]));
+        list.add_task(Task::new("Done 1".to_string(), vec![Weekday::Thu]));
+
+        list.get_task_mut(1).unwrap().set_done(true, Local.ymd(2021, 4, 1));
+
+        list
+    }
+
+    #[test]
+    fn tdlist_undone_todos_for_date_returns_only_undone() {
+        let list = tdlist_with_done_and_undone();
+
+        let returned = list.undone_todos_for_date_wtd(Local.ymd(2021, 4, 1), Local.ymd(2021, 4, 1));
+
+        assert!(returned.contains(&&list.todos()[0]));
+        assert!(returned.contains(&&list.todos()[1]));
+        assert!(!returned.contains(&&list.todos()[2]));
+        assert!(!returned.contains(&&list.todos()[3]));
+        assert_eq!(returned.len(), 2);
+    }
+
+    #[test]
+    fn tdlist_done_todos_for_date_returns_only_done() {
+        let list = tdlist_with_done_and_undone();
+
+        let returned = list.done_todos_for_date_wtd(Local.ymd(2021, 4, 1), Local.ymd(2021, 4, 1));
+
+        assert!(!returned.contains(&&list.todos()[0]));
+        assert!(!returned.contains(&&list.todos()[1]));
+        assert!(returned.contains(&&list.todos()[2]));
+        assert!(returned.contains(&&list.todos()[3]));
+        assert_eq!(returned.len(), 2);
+    }
+
+    #[test]
+    fn tdlist_undone_tasks_for_date_returns_only_undone() {
+        let list = tdlist_with_done_and_undone();
+
+        let returned = list.undone_tasks_for_date(Local.ymd(2021, 4, 1));
+
+        assert!(returned.contains(&&list.tasks()[0]));
+        assert!(!returned.contains(&&list.tasks()[1]));
+        assert_eq!(returned.len(), 1);
+    }
+
+    #[test]
+    fn tdlist_done_tasks_for_date_returns_only_done() {
+        let list = tdlist_with_done_and_undone();
+
+        let returned = list.done_tasks_for_date(Local.ymd(2021, 4, 1));
+
+        assert!(!returned.contains(&&list.tasks()[0]));
+        assert!(returned.contains(&&list.tasks()[1]));
+        assert_eq!(returned.len(), 1);
     }
 }
