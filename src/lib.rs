@@ -363,6 +363,7 @@ trait SyncItem {
     fn set_state(&mut self, state: ItemState);
     fn state(&self) -> ItemState;
     fn set_id(&mut self, id: u64);
+    fn id(&self) -> u64;
 }
 
 impl SyncItem for Todo{
@@ -377,6 +378,9 @@ impl SyncItem for Todo{
     fn set_id(&mut self, id: u64) {
         self.id = id;
     }
+    fn id(&self) -> u64 {
+        self.id
+    }
 }
 
 impl SyncItem for Task {
@@ -390,6 +394,9 @@ impl SyncItem for Task {
 
     fn set_id(&mut self, id: u64) {
         self.id = id;
+    }
+    fn id(&self) -> u64 {
+        self.id
     }
 }
 
@@ -416,22 +423,23 @@ impl<T: SyncItem + Clone> SyncList<T> {
         self.items.push(item);
     }
     fn mark_removed(&mut self, id: u64) -> Result<(), ()> {
-        if let Some(item) = self.items.get_mut(id as usize) {
-            if self.server {
-                self.items.remove(id as usize);
-                self.map_indices_to_ids();
-                Ok(())
-            } else {
-                if item.state() == ItemState::Removed {
-                    Err(())
-                } else {
-                    item.set_state(ItemState::Removed);
-                    Ok(())
-                }
+        let mut ok = false;
+        for item in &mut self.items {
+            // Do not re-remove items. If an item is removed it should act as if it didn't exists.
+            if item.id() == id && item.state() != ItemState::Removed {
+                item.set_state(ItemState::Removed);
+                ok = true;
+                break;
             }
-        } else {
-            Err(())
         }
+        if !ok {
+            return Err(());
+        }
+        if self.server {
+            self.items.retain(|item| item.state() != ItemState::Removed);
+        }
+        self.map_indices_to_ids();
+        Ok(())
     }
     fn map_indices_to_ids(&mut self) {
         for (new_id, item) in self.items.iter_mut().enumerate() {
@@ -450,6 +458,10 @@ impl<T: SyncItem + Clone> SyncList<T> {
     }
     fn get_item_mut(&mut self, id: u64) -> Option<&mut T> {
         self.items.get_mut(id as usize)
+    }
+    fn sync_self(&mut self) {
+        self.items.retain(|item| item.state() != ItemState::Removed);
+        // TODO: This should also set all item states to Neutral.
     }
 }
 
@@ -601,8 +613,8 @@ impl TdList {
     /// of both `Todo`s and `Task`s. Additionally removes old `Todo`s.
     pub fn self_sync(&mut self) {
         self.remove_old_todos();
-        self.todos.items.retain(|todo| todo.state != ItemState::Removed);
-        self.tasks.items.retain(|task| task.state != ItemState::Removed);
+        self.todos.sync_self();
+        self.tasks.sync_self();
     }
 }
 
