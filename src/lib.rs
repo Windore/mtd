@@ -469,6 +469,19 @@ impl TdList {
 
         done_tasks
     }
+
+    /// Removes all `Todo`s that are done and at least a day has passed since their completion.
+    /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`.
+    pub fn remove_old_todos(&mut self) {
+        self.remove_old_todos_wtd(Local::today());
+    }
+
+    fn remove_old_todos_wtd(&mut self, today: Date<Local>) {
+        self.todos = self.todos
+            .drain(..)
+            .filter(|todo| { !todo.can_remove_wtd(today) })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -729,5 +742,21 @@ mod tests {
         assert!(!returned.contains(&&list.tasks()[0]));
         assert!(returned.contains(&&list.tasks()[1]));
         assert_eq!(returned.len(), 1);
+    }
+
+    #[test]
+    fn tdlist_remove_old_todos_removes_done_after_1_day() {
+        let mut list = tdlist_with_done_and_undone();
+        let list_containing_same_todos_for_eq_check = tdlist_with_done_and_undone();
+
+        list.remove_old_todos_wtd(Local.ymd(2021, 4, 1));
+
+        assert_eq!(list.todos(), list_containing_same_todos_for_eq_check.todos());
+
+        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+
+        assert_eq!(list.todos()[0], list_containing_same_todos_for_eq_check.todos[0]);
+        assert_eq!(list.todos()[1], list_containing_same_todos_for_eq_check.todos[1]);
+        assert_eq!(list.todos().len(), 2);
     }
 }
