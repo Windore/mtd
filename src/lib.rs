@@ -26,6 +26,7 @@ pub struct Todo {
     date: Date<Local>,
     id: u64,
     done: Option<Date<Local>>,
+    state: ItemState,
 }
 
 impl Todo {
@@ -36,6 +37,7 @@ impl Todo {
             date: Local::today(),
             id: 0,
             done: None,
+            state: ItemState::New,
         }
     }
 
@@ -47,6 +49,7 @@ impl Todo {
             date: weekday_to_date(weekday, Local::today()),
             id: 0,
             done: None,
+            state: ItemState::New,
         }
     }
 
@@ -58,6 +61,7 @@ impl Todo {
             date,
             id: 0,
             done: None,
+            state: ItemState::New,
         }
     }
 
@@ -162,6 +166,7 @@ pub struct Task {
     weekdays: Vec<Weekday>,
     done_map: HashMap<Weekday, Date<Local>>,
     id: u64,
+    state: ItemState,
 }
 
 impl Task {
@@ -174,7 +179,7 @@ impl Task {
         if weekdays.is_empty() {
             panic!("Cannot create a task without specifying at least one weekday.")
         }
-        Task { body, weekdays, id: 0, done_map: HashMap::new() }
+        Task { body, weekdays, id: 0, done_map: HashMap::new(), state: ItemState::New }
     }
 
     /// Gets the `body` of the `Task`.
@@ -335,10 +340,18 @@ impl Display for Task {
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
 /// `Task`s have `id`s that match their index within the internal `Vec`s of the `TdList`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TdList {
     todos: Vec<Todo>,
     tasks: Vec<Task>,
+    server: bool,
+}
+
+#[derive(Debug, PartialEq)]
+enum ItemState {
+    New,
+    Removed,
+    Unchanged,
 }
 
 /* TdList contains some amount of code duplication, but Tasks and Todos are imo too different
@@ -347,16 +360,23 @@ pub struct TdList {
  */
 
 impl TdList {
-    /// Creates a new empty `TdList`.
-    pub fn new() -> Self {
-        Self { todos: Vec::new(), tasks: Vec::new() }
+    /// Creates a new empty client `TdList`.
+    pub fn new_client() -> Self {
+        Self { todos: Vec::new(), tasks: Vec::new(), server: false }
+    }
+
+    /// Creates a new empty server `TdList`.
+    pub fn new_server() -> Self {
+        Self { todos: Vec::new(), tasks: Vec::new(), server: true }
     }
 
     /// Gets all the `Todo`s in the list. A `Todo`'s id matches its index in this list.
     pub fn todos(&self) -> Vec<&Todo> {
         let mut todos = Vec::new();
         for todo in &self.todos {
-            todos.push(todo);
+            if todo.state != ItemState::Removed {
+                todos.push(todo);
+            }
         }
 
         todos
@@ -366,7 +386,9 @@ impl TdList {
     pub fn tasks(&self) -> Vec<&Task> {
         let mut tasks = Vec::new();
         for task in &self.tasks {
-            tasks.push(task);
+            if task.state != ItemState::Removed {
+                tasks.push(task);
+            }
         }
 
         tasks
@@ -374,37 +396,64 @@ impl TdList {
 
     /// Adds a `Todo` to the list and modifies its id.
     pub fn add_todo(&mut self, mut todo: Todo) {
+        if self.server {
+            todo.state = ItemState::Unchanged;
+        } else {
+            todo.state = ItemState::New;
+        }
+
         todo.set_id(self.todos.len() as u64);
         self.todos.push(todo);
     }
 
     /// Adds a `Task` to the list and modifies its id.
     pub fn add_task(&mut self, mut task: Task) {
+        if self.server {
+            task.state = ItemState::Unchanged;
+        } else {
+            task.state = ItemState::New;
+        }
+
         task.set_id(self.tasks.len() as u64);
         self.tasks.push(task);
     }
 
     /// Removes the `Todo` that matches the given id. The id matches the index of the `Todo`. If no
-    /// such `Todo` exists, does nothing. Removing a `Todo` may change the ids of other `Todo`s.
+    /// such `Todo` exists, does nothing. (Note for clients: this method only marks items as removed,
+    /// to actually remove them, the TdList must be synchronized)
+    // TODO: Return a result indicating if the removed item exists.
     pub fn remove_todo(&mut self, id: u64) {
-        if self.todos.len() <= id as usize {
-            return;
+        if let Some(todo) = self.todos.get_mut(id as usize) {
+            if self.server {
+                self.todos.remove(id as usize);
+                self.map_todo_indices_to_ids();
+            } else {
+                todo.state = ItemState::Removed;
+            }
         }
-        self.todos.remove(id as usize);
+    }
 
+    fn map_todo_indices_to_ids(&mut self) {
         for (new_id, item) in self.todos.iter_mut().enumerate() {
             item.set_id(new_id as u64);
         }
     }
 
     /// Removes the `Task` that matches the given id. The id matches the index of the `Task`. If no
-    /// such `Task` exists, does nothing. Removing a `Task` may change the ids of other `Task`s.
+    /// such `Task` exists, does nothing. (Note for clients: this method only marks items as removed,
+    /// to actually remove them, the TdList must be synchronized)
     pub fn remove_task(&mut self, id: u64) {
-        if self.tasks.len() <= id as usize {
-            return;
+        if let Some(task) = self.tasks.get_mut(id as usize) {
+            if self.server {
+                self.tasks.remove(id as usize);
+                self.map_task_indices_to_ids();
+            } else {
+                task.state = ItemState::Removed;
+            }
         }
-        self.tasks.remove(id as usize);
+    }
 
+    fn map_task_indices_to_ids(&mut self) {
         for (new_id, item) in self.tasks.iter_mut().enumerate() {
             item.set_id(new_id as u64);
         }
@@ -482,15 +531,34 @@ impl TdList {
 
     /// Removes all `Todo`s that are done and at least a day has passed since their completion.
     /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`.
+    /// (Note for clients: this method only marks items as removed, to actually
+    /// remove them, the TdList must be synchronized)
     pub fn remove_old_todos(&mut self) {
         self.remove_old_todos_wtd(Local::today());
     }
 
     fn remove_old_todos_wtd(&mut self, today: Date<Local>) {
-        self.todos = self.todos
-            .drain(..)
-            .filter(|todo| { !todo.can_remove_wtd(today) })
-            .collect()
+        if self.server {
+            // This actually removes items...
+            self.todos = self.todos
+                .drain(..)
+                .filter(|todo| { !todo.can_remove_wtd(today) })
+                .collect()
+        } else {
+            // ...while this only marks them as removed
+            for todo in &mut self.todos {
+                if todo.can_remove_wtd(today) {
+                    todo.state = ItemState::Removed;
+                }
+            }
+        }
+    }
+
+    /// Synchronizes the list with itself actually removing items. Synchronizing may change the `id`s
+    /// of both `Todo`s and `Task`s.
+    pub fn self_sync(&mut self) {
+        self.todos.retain(|todo| todo.state != ItemState::Removed);
+        self.tasks.retain(|task| task.state != ItemState::Removed);
     }
 }
 
@@ -573,7 +641,7 @@ mod tests {
 
     #[test]
     fn tdlist_add_todo_updates_ids() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
@@ -585,8 +653,8 @@ mod tests {
     }
 
     #[test]
-    fn tdlist_remove_todo_updates_ids() {
-        let mut list = TdList::new();
+    fn tdlist_removed_todos_not_visible() {
+        let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
@@ -594,8 +662,6 @@ mod tests {
 
         list.remove_todo(1);
 
-        assert_eq!(list.todos()[0].id(), 0);
-        assert_eq!(list.todos()[1].id(), 1);
         assert_eq!(list.todos()[0].body(), "Todo 0");
         assert_eq!(list.todos()[1].body(), "Todo 2");
         assert_eq!(list.todos().len(), 2);
@@ -603,7 +669,7 @@ mod tests {
 
     #[test]
     fn tdlist_remove_todo_does_nothing_with_nonexistent_id() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
@@ -618,7 +684,7 @@ mod tests {
 
     #[test]
     fn tdlist_add_task_updates_ids() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
@@ -630,8 +696,8 @@ mod tests {
     }
 
     #[test]
-    fn tdlist_remove_task_updates_ids() {
-        let mut list = TdList::new();
+    fn tdlist_removed_tasks_not_visible() {
+        let mut list = TdList::new_client();
 
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
@@ -639,8 +705,6 @@ mod tests {
 
         list.remove_task(1);
 
-        assert_eq!(list.tasks()[0].id(), 0);
-        assert_eq!(list.tasks()[1].id(), 1);
         assert_eq!(list.tasks()[0].body(), "Task 0");
         assert_eq!(list.tasks()[1].body(), "Task 2");
         assert_eq!(list.tasks().len(), 2);
@@ -648,7 +712,7 @@ mod tests {
 
     #[test]
     fn tdlist_remove_task_does_nothing_with_nonexistent_id() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
@@ -663,7 +727,7 @@ mod tests {
 
     #[test]
     fn tdlist_get_todo_mut_returns_mutable() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_undated("Todo".to_string()));
 
@@ -676,7 +740,7 @@ mod tests {
 
     #[test]
     fn tdlist_get_task_mut_returns_mutable() {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_task(Task::new("Task".to_string(), vec![Weekday::Mon]));
 
@@ -688,7 +752,7 @@ mod tests {
     }
 
     fn tdlist_with_done_and_undone() -> TdList {
-        let mut list = TdList::new();
+        let mut list = TdList::new_client();
 
         list.add_todo(Todo::new_specific_date("Undone 1".to_string(), Local.ymd(2021, 4, 1)));
         list.add_todo(Todo::new_specific_date("Undone 2".to_string(), Local.ymd(2021, 3, 29)));
@@ -768,5 +832,33 @@ mod tests {
         assert_eq!(list.todos()[0], list_containing_same_todos_for_eq_check.todos()[0]);
         assert_eq!(list.todos()[1], list_containing_same_todos_for_eq_check.todos()[1]);
         assert_eq!(list.todos().len(), 2);
+    }
+
+    #[test]
+    fn tdlist_client_only_self_sync_actually_removes_items() {
+        let mut list = tdlist_with_done_and_undone();
+
+        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+        list.remove_task(1);
+
+        assert_eq!(list.todos.len(), 4);
+        assert_eq!(list.tasks.len(), 2);
+
+        list.self_sync();
+
+        assert_eq!(list.todos.len(), 2);
+        assert_eq!(list.tasks.len(), 1);
+    }
+
+    #[test]
+    fn tdlist_server_always_removes_items() {
+        let mut list = tdlist_with_done_and_undone();
+        list.server = true;
+
+        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+        list.remove_task(1);
+
+        assert_eq!(list.todos.len(), 2);
+        assert_eq!(list.tasks.len(), 1);
     }
 }
