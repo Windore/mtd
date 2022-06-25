@@ -1,3 +1,43 @@
+//! A crate defining the internal functionality of MTD. Works as the core for MTD CLI and Android app.
+//! This crate can be used to crate MTD compatible applications.
+//!
+//! MTD is the newest Todo app in my long lasting line of different Todo app, but this time hopefully
+//! the final addition. MTD supports synchronization using a self-hosted server as in one server supports
+//! only one user.
+//!
+//! # Example
+//!
+//! ```
+//! use chrono::{Local, Weekday};
+//! use mtd::{Task, TdList, Todo};
+//!
+//! // Creates a new TdList which is a list that is used for containing Todos and Tasks.
+//! let mut client = TdList::new_client();
+//!
+//! // Adds a new Todo that should be done the next Friday.
+//! client.add_todo(Todo::new_dated("Install MTD".to_string(), Weekday::Fri));
+//!
+//! // Adds a new Task that should be done every Wednesday and Saturday.
+//! client.add_task(Task::new("Clean the house.".to_string(), vec![Weekday::Wed, Weekday::Sat]));
+//!
+//! // This TdList should be the one got from the server. It usually shouldn't be modified directly
+//! // because all modifications made on the client will be synced to the server.
+//! let mut server = TdList::new_server();
+//!
+//! // The new added items will be *copied* to the server.
+//! client.sync(&mut server);
+//!
+//! assert!(server.todos().contains(&&Todo::new_dated("Install MTD".to_string(), Weekday::Fri)));
+//! assert!(server.tasks().contains(&&Task::new("Clean the house.".to_string(), vec![Weekday::Wed, Weekday::Sat])));
+//!
+//! // Modifications such as setting a Todo done are also copied to the server.
+//! client.get_todo_mut(0).unwrap().set_done(true);
+//! assert_ne!(client.todos()[0].done(), server.todos()[0].done());
+//!
+//! client.sync(&mut server);
+//! assert_eq!(client.todos()[0].done(), server.todos()[0].done());
+//! ```
+
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -69,8 +109,7 @@ impl Todo {
         }
     }
 
-    /// Creates a new `Todo` that shows up to be done at a specific weekday after which it will show
-    /// for the current day.
+    /// Creates a new `Todo` that shows up to be done at a specific weekday.
     pub fn new_dated(body: String, weekday: Weekday) -> Todo {
         Todo {
             body,
@@ -465,11 +504,7 @@ impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
         }
     }
     fn add(&mut self, mut item: T) {
-        if self.server {
-            item.set_state(ItemState::Unchanged);
-        } else {
-            item.set_state(ItemState::New);
-        }
+        item.set_state(ItemState::New);
         self.items.push(item);
     }
     fn mark_removed(&mut self, id: u64) -> Result<(), ()> {
@@ -586,7 +621,7 @@ impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
 }
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
-/// `Task`s have `id`s that match their index within the internal `Vec`s of the `TdList`.
+/// `Task`s have `id`s that match their `id`s within the `TdList`.
 #[derive(Debug)]
 pub struct TdList {
     todos: SyncList<Todo>,
@@ -594,7 +629,6 @@ pub struct TdList {
     server: bool,
 }
 
-// TODO: Update documentation about ids for both Tasks and Todos.
 impl TdList {
     /// Creates a new empty client `TdList`.
     pub fn new_client() -> Self {
@@ -606,48 +640,48 @@ impl TdList {
         Self { todos: SyncList::new(true), tasks: SyncList::new(true), server: true }
     }
 
-    /// Gets all the `Todo`s in the list. A `Todo`'s id matches its index in this list.
+    /// Gets all the `Todo`s in the list.
     pub fn todos(&self) -> Vec<&Todo> {
         self.todos.items()
     }
 
-    /// Gets all the `Task`s in the list. A `Task`'s id matches its index in this list.
+    /// Gets all the `Task`s in the list.
     pub fn tasks(&self) -> Vec<&Task> {
         self.tasks.items()
     }
 
-    /// Adds a `Todo` to the list and modifies its id.
+    /// Adds a `Todo` to the list and updates its id.
     pub fn add_todo(&mut self, mut todo: Todo) {
         todo.set_id(self.todos.items.len() as u64);
         self.todos.add(todo);
     }
 
-    /// Adds a `Task` to the list and modifies its id.
+    /// Adds a `Task` to the list and updates its id.
     pub fn add_task(&mut self, mut task: Task) {
         task.set_id(self.tasks.items.len() as u64);
         self.tasks.add(task)
     }
 
-    /// Removes the `Todo` that matches the given id. The id matches the index of the `Todo`. If no
-    /// such `Todo` exists, does nothing. (Note for clients: this method only marks items as removed,
-    /// to actually remove them, the TdList must be synchronized)
+    /// Removes the `Todo` that matches the given id. If no `Todo` with the given `id` exists, returns
+    /// a `MtdError`.
     pub fn remove_todo(&mut self, id: u64) -> Result<(), MtdError> {
         self.todos.mark_removed(id).map_err(|_| MtdError::NoTodoWithGivenId(id))
     }
 
-    /// Removes the `Task` that matches the given id. The id matches the index of the `Task`. If no
-    /// such `Task` exists, does nothing. (Note for clients: this method only marks items as removed,
-    /// to actually remove them, the TdList must be synchronized)
+    /// Removes the `Task` that matches the given id. If no `Task` with the given `id` exists, returns
+    /// a `MtdError`.
     pub fn remove_task(&mut self, id: u64) -> Result<(), MtdError> {
         self.tasks.mark_removed(id).map_err(|_| MtdError::NoTaskWithGivenId(id))
     }
 
-    /// Returns a mutable reference to a `Todo`.
+    /// Returns a mutable reference to a `Todo` by its `id`. If no `Todo` with the given `id` exists
+    /// return `None`.
     pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
         self.todos.get_item_mut(id)
     }
 
-    /// Returns a mutable reference to a `Task`.
+    /// Returns a mutable reference to a `Task` by its `id`. If no `Task` with the given `id` exists
+    /// return `None`.
     pub fn get_task_mut(&mut self, id: u64) -> Option<&mut Task> {
         self.tasks.get_item_mut(id)
     }
@@ -715,8 +749,6 @@ impl TdList {
     /// Removes all `Todo`s that are done and at least a day has passed since their completion.
     /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`. This is called
     /// automatically every sync.
-    /// (Note for clients: this method only marks items as removed, to actually
-    /// remove them, the TdList must be synchronized)
     pub fn remove_old_todos(&mut self) {
         self.remove_old_todos_wtd(Local::today());
     }
