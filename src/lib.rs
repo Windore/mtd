@@ -1,7 +1,9 @@
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 
 use chrono::{Date, Datelike, Local, Weekday};
+use rand::random;
 
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
@@ -44,12 +46,13 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 /// Represents a one-time task to be done at a specific date. The date is specified as a weekday
 /// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
 /// `Todo` will show up for the current day.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Todo {
     body: String,
     date: Date<Local>,
     id: u64,
     done: Option<Date<Local>>,
+    sync_id: u64,
     state: ItemState,
 }
 
@@ -61,6 +64,7 @@ impl Todo {
             date: Local::today(),
             id: 0,
             done: None,
+            sync_id: random(),
             state: ItemState::Unchanged,
         }
     }
@@ -73,6 +77,7 @@ impl Todo {
             date: weekday_to_date(weekday, Local::today()),
             id: 0,
             done: None,
+            sync_id: random(),
             state: ItemState::Unchanged,
         }
     }
@@ -85,6 +90,7 @@ impl Todo {
             date,
             id: 0,
             done: None,
+            sync_id: random(),
             state: ItemState::Unchanged,
         }
     }
@@ -132,11 +138,13 @@ impl Todo {
     /// Sets the `body` of the `Todo`.
     pub fn set_body(&mut self, body: String) {
         self.body = body;
+        self.state = ItemState::Changed;
     }
 
     /// Sets the weekday of the `Todo`.
     pub fn set_weekday(&mut self, weekday: Weekday) {
         self.date = weekday_to_date(weekday, Local::today());
+        self.state = ItemState::Changed;
     }
 
     /// Returns `true` if the `Todo` is done.
@@ -155,6 +163,11 @@ impl Todo {
         } else {
             self.done = None;
         }
+        self.state = ItemState::Changed;
+    }
+
+    fn set_id(&mut self, id: u64) {
+        self.id = id;
     }
 
     /// Returns `true` if the `Todo` can be removed. A `Todo` can be removed one day after its
@@ -178,14 +191,23 @@ impl Display for Todo {
     }
 }
 
+impl PartialEq for Todo {
+    fn eq(&self, other: &Self) -> bool {
+        self.body == other.body &&
+            self.date == other.date &&
+            self.done == other.done
+    }
+}
+
 /// Represents a reoccurring task for the given weekday(s).
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
     done_map: HashMap<Weekday, Date<Local>>,
     id: u64,
     state: ItemState,
+    sync_id: u64,
 }
 
 impl Task {
@@ -198,7 +220,7 @@ impl Task {
         if weekdays.is_empty() {
             panic!("Cannot create a task without specifying at least one weekday.")
         }
-        Task { body, weekdays, id: 0, done_map: HashMap::new(), state: ItemState::Unchanged }
+        Task { body, weekdays, id: 0, done_map: HashMap::new(), sync_id: random(), state: ItemState::Unchanged }
     }
 
     /// Gets the `body` of the `Task`.
@@ -219,17 +241,24 @@ impl Task {
     /// Sets the `body` of the `Task`.
     pub fn set_body(&mut self, body: String) {
         self.body = body;
+        self.state = ItemState::Changed;
+    }
+
+    fn set_id(&mut self, id: u64) {
+        self.id = id;
     }
 
     /// Sets the `weekdays` of the `Task`.
     pub fn set_weekdays(&mut self, weekdays: Vec<Weekday>) {
         self.weekdays = weekdays;
+        self.state = ItemState::Changed;
     }
 
     /// Adds a weekday to the weekdays list.
     pub fn add_weekday(&mut self, weekday: Weekday) {
         // It doesn't matter if there are duplicate weekdays.
         self.weekdays.push(weekday);
+        self.state = ItemState::Changed;
     }
 
     /// Removes a weekday from the weekdays list. Removes all duplicates as well.
@@ -352,21 +381,31 @@ impl Display for Task {
     }
 }
 
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self.body == other.body &&
+            self.weekdays == other.weekdays &&
+            self.done_map == other.done_map
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 enum ItemState {
     New,
     Removed,
     Unchanged,
+    Changed,
 }
 
 trait SyncItem {
     fn set_state(&mut self, state: ItemState);
     fn state(&self) -> ItemState;
     fn set_id(&mut self, id: u64);
-    fn id(&self) -> u64;
+    fn sync_id(&self) -> u64;
+    fn update_old(&self, old: &mut Self);
 }
 
-impl SyncItem for Todo{
+impl SyncItem for Todo {
     fn set_state(&mut self, state: ItemState) {
         self.state = state;
     }
@@ -378,8 +417,14 @@ impl SyncItem for Todo{
     fn set_id(&mut self, id: u64) {
         self.id = id;
     }
-    fn id(&self) -> u64 {
-        self.id
+    fn sync_id(&self) -> u64 {
+        self.sync_id
+    }
+
+    fn update_old(&self, old: &mut Self) {
+        old.body = self.body.clone();
+        old.date = self.date.clone();
+        old.done = self.done.clone();
     }
 }
 
@@ -395,8 +440,14 @@ impl SyncItem for Task {
     fn set_id(&mut self, id: u64) {
         self.id = id;
     }
-    fn id(&self) -> u64 {
-        self.id
+    fn sync_id(&self) -> u64 {
+        self.sync_id
+    }
+
+    fn update_old(&self, old: &mut Self) {
+        old.body = self.body.clone();
+        old.weekdays = self.weekdays.clone();
+        old.done_map = self.done_map.clone();
     }
 }
 
@@ -406,7 +457,7 @@ struct SyncList<T: SyncItem + Clone> {
     server: bool,
 }
 
-impl<T: SyncItem + Clone> SyncList<T> {
+impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
     fn new(server: bool) -> Self {
         Self {
             items: Vec::new(),
@@ -419,26 +470,27 @@ impl<T: SyncItem + Clone> SyncList<T> {
         } else {
             item.set_state(ItemState::New);
         }
-        item.set_id(self.items.len() as u64);
         self.items.push(item);
     }
     fn mark_removed(&mut self, id: u64) -> Result<(), ()> {
-        let mut ok = false;
-        for item in &mut self.items {
-            // Do not re-remove items. If an item is removed it should act as if it didn't exists.
-            if item.id() == id && item.state() != ItemState::Removed {
-                item.set_state(ItemState::Removed);
-                ok = true;
-                break;
-            }
-        }
-        if !ok {
+        if id >= self.items.len() as u64 {
             return Err(());
         }
+        let item = self.items[id as usize].borrow_mut();
+
+        // Do not allow the removal of items already removed.
+        if item.state() == ItemState::Removed {
+            return Err(());
+        }
+
+        item.set_state(ItemState::Removed);
+
+        // Servers remove the items immediately.
         if self.server {
             self.items.retain(|item| item.state() != ItemState::Removed);
+            self.map_indices_to_ids();
         }
-        self.map_indices_to_ids();
+
         Ok(())
     }
     fn map_indices_to_ids(&mut self) {
@@ -461,7 +513,75 @@ impl<T: SyncItem + Clone> SyncList<T> {
     }
     fn sync_self(&mut self) {
         self.items.retain(|item| item.state() != ItemState::Removed);
-        // TODO: This should also set all item states to Neutral.
+        self.map_indices_to_ids();
+        for item in self.items.iter_mut() {
+            item.set_state(ItemState::Unchanged);
+        }
+    }
+    fn sync(&mut self, other: &mut Self) {
+        if self.server && other.server {
+            panic!("Both self and other are servers.");
+        } else if !self.server && !other.server {
+            panic!("Neither self or other is a server.");
+        }
+
+        let server_list;
+        let client_list;
+        if self.server {
+            server_list = self;
+            client_list = other
+        } else {
+            server_list = other;
+            client_list = self;
+        }
+
+        for item in client_list.items.iter_mut() {
+            match item.state() {
+                ItemState::New => {
+                    server_list.add(item.clone());
+                }
+                ItemState::Removed => {
+                    if let Some(s_item) = server_list.get_item_by_sync_id(item.sync_id()) {
+                        s_item.set_state(ItemState::Removed);
+                    }
+                }
+                ItemState::Unchanged => {
+                    if let Some(s_item) = server_list.get_item_by_sync_id(item.sync_id()) {
+                        // If this is false then the item has been modified on the server.
+                        if s_item != item {
+                            // Update the client item to match the server item.
+                            s_item.update_old(item);
+                        }
+                    } else {
+                        item.set_state(ItemState::Removed);
+                    }
+                }
+                ItemState::Changed => {
+                    if let Some(s_item) = server_list.get_item_by_sync_id(item.sync_id()) {
+                        item.update_old(s_item);
+                    } else {
+                        // The modified item doesn't exist on the server therefore it needs to be
+                        // added.
+                        server_list.add(item.clone());
+                    }
+                }
+            }
+        }
+
+        for item in server_list.items.iter() {
+            if item.state() != ItemState::Removed {
+                if client_list.get_item_by_sync_id(item.sync_id()).is_none() {
+                    client_list.add(item.clone());
+                }
+            }
+        }
+
+        client_list.sync_self();
+        server_list.sync_self();
+    }
+
+    fn get_item_by_sync_id(&mut self, sync_id: u64) -> Option<&mut T> {
+        self.items.iter_mut().filter(|i| i.sync_id() == sync_id).next()
     }
 }
 
@@ -474,6 +594,7 @@ pub struct TdList {
     server: bool,
 }
 
+// TODO: Update documentation about ids for both Tasks and Todos.
 impl TdList {
     /// Creates a new empty client `TdList`.
     pub fn new_client() -> Self {
@@ -496,12 +617,14 @@ impl TdList {
     }
 
     /// Adds a `Todo` to the list and modifies its id.
-    pub fn add_todo(&mut self, todo: Todo) {
+    pub fn add_todo(&mut self, mut todo: Todo) {
+        todo.set_id(self.todos.items.len() as u64);
         self.todos.add(todo);
     }
 
     /// Adds a `Task` to the list and modifies its id.
-    pub fn add_task(&mut self, task: Task) {
+    pub fn add_task(&mut self, mut task: Task) {
+        task.set_id(self.tasks.items.len() as u64);
         self.tasks.add(task)
     }
 
@@ -615,6 +738,64 @@ impl TdList {
         self.remove_old_todos();
         self.todos.sync_self();
         self.tasks.sync_self();
+    }
+
+    // This method is only unit tested using Todos which is fine as long as the internal sync impl
+    // of todos and tasks is the same because then these tests cover Tasks as well.
+    /// Synchronizes the list with another list actually removing items. Synchronizing may change the `id`s
+    /// of both `Todo`s and `Task`s. Additionally removes old `Todo`s.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use mtd::{TdList, Todo};
+    ///
+    /// let mut client = TdList::new_client();
+    /// let mut server = TdList::new_server();
+    ///
+    /// client.add_todo(Todo::new_undated("Todo 1".to_string()));
+    ///
+    /// server.add_todo(Todo::new_undated("Todo 2".to_string()));
+    ///
+    /// // New todos are added to both the server and the client.
+    /// client.sync(&mut server);
+    ///
+    /// assert!(client.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
+    /// assert!(client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+    /// assert_eq!(client.todos().len(), 2);
+    ///
+    /// assert!(server.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
+    /// assert!(server.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+    /// assert_eq!(server.todos().len(), 2);
+    ///
+    /// client.remove_todo(0).unwrap();
+    ///
+    /// // The removed item gets removed from both the server and the client.
+    /// client.sync(&mut server);
+    ///
+    /// assert!(client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+    /// assert_eq!(client.todos().len(), 1);
+    ///
+    /// assert!(server.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+    /// assert_eq!(server.todos().len(), 1);
+    ///
+    /// client.get_todo_mut(0).unwrap().set_body("New Todo 1".to_string());
+    ///
+    /// // Modifications are synchronized as well.
+    /// client.sync(&mut server);
+    ///
+    /// assert!(client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+    /// assert_eq!(client.todos().len(), 1);
+    ///
+    /// assert!(server.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+    /// assert_eq!(server.todos().len(), 1);
+    /// ```
+    pub fn sync(&mut self, other: &mut Self) {
+        self.remove_old_todos();
+        other.remove_old_todos();
+
+        self.todos.sync(&mut other.todos);
+        self.tasks.sync(&mut other.tasks);
     }
 }
 
@@ -885,7 +1066,7 @@ mod tests {
     }
 
     #[test]
-    fn tdlist_sync_always_removes_old_todos() {
+    fn tdlist_self_sync_always_removes_old_todos() {
         let mut list = tdlist_with_done_and_undone();
 
         assert_eq!(list.todos.items.len(), 4);
@@ -893,5 +1074,144 @@ mod tests {
         list.self_sync();
 
         assert_eq!(list.todos.items.len(), 2);
+    }
+
+    #[test]
+    fn tdlist_sync_always_removes_old_todos() {
+        let mut client = tdlist_with_done_and_undone();
+        let mut server = TdList::new_server();
+
+        assert_eq!(client.todos.items.len(), 4);
+
+        client.sync(&mut server);
+
+        assert_eq!(client.todos.items.len(), 2);
+    }
+
+    #[test]
+    fn tdlist_sync_removed_from_server_gets_removed_from_client() {
+        let mut client = TdList::new_client();
+        let mut server = TdList::new_server();
+
+        client.add_todo(Todo::new_undated("Todo 1".to_string()));
+
+        client.sync(&mut server);
+
+        server.remove_todo(0).unwrap();
+
+        client.sync(&mut server);
+
+        assert_eq!(client.todos().len(), 0);
+        assert_eq!(server.todos().len(), 0);
+    }
+
+    #[test]
+    fn tdlist_sync_modified_in_server_gets_modified_in_client() {
+        let mut client = TdList::new_client();
+        let mut server = TdList::new_server();
+
+        client.add_todo(Todo::new_undated("Todo 1".to_string()));
+
+        client.sync(&mut server);
+
+        server.get_todo_mut(0).unwrap().set_body("New Todo 1".to_string());
+
+        client.sync(&mut server);
+
+
+        assert_eq!(client.todos().len(), 1);
+        assert!(client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+
+        assert_eq!(server.todos().len(), 1);
+        assert!(server.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+    }
+
+    #[test]
+    fn tdlist_sync_modified_new_gets_copied_to_server() {
+        let mut client = TdList::new_client();
+        let mut server = TdList::new_server();
+
+        client.add_todo(Todo::new_undated("Todo 1".to_string()));
+
+        client.get_todo_mut(0).unwrap().set_body("New Todo 1".to_string());
+
+        client.sync(&mut server);
+
+        assert_eq!(client.todos().len(), 1);
+        assert!(client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+
+        assert_eq!(server.todos().len(), 1);
+        assert!(server.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+    }
+
+    #[test]
+    #[should_panic]
+    fn tdlist_sync_panics_with_both_server() {
+        let mut s = TdList::new_server();
+        let mut s1 = TdList::new_server();
+
+        s.sync(&mut s1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn tdlist_sync_panics_with_both_client() {
+        let mut s = TdList::new_client();
+        let mut s1 = TdList::new_client();
+
+        s.sync(&mut s1);
+    }
+
+    // This is like many tests merged into a one due to my laziness.
+    #[test]
+    fn tdlist_sync_works_with_multiple_items_and_with_tasks() {
+        // Overall test: Check that sync works with Tasks.
+        let mut client = TdList::new_client();
+        let mut server = TdList::new_server();
+
+        // Test 1. Adding multiple works
+        client.add_task(Task::new("Task 1".to_string(), vec![Weekday::Fri]));
+        client.add_task(Task::new("Task 2".to_string(), vec![Weekday::Fri]));
+        client.add_task(Task::new("Task 3".to_string(), vec![Weekday::Fri]));
+
+        server.sync(&mut client);
+
+        assert!(client.tasks().contains(&&Task::new("Task 1".to_string(), vec![Weekday::Fri])));
+        assert!(client.tasks().contains(&&Task::new("Task 2".to_string(), vec![Weekday::Fri])));
+        assert!(client.tasks().contains(&&Task::new("Task 3".to_string(), vec![Weekday::Fri])));
+        assert_eq!(client.tasks().len(), 3);
+
+        assert!(server.tasks().contains(&&Task::new("Task 1".to_string(), vec![Weekday::Fri])));
+        assert!(server.tasks().contains(&&Task::new("Task 2".to_string(), vec![Weekday::Fri])));
+        assert!(server.tasks().contains(&&Task::new("Task 3".to_string(), vec![Weekday::Fri])));
+        assert_eq!(server.tasks().len(), 3);
+
+        // Test 2. Modifying multiple works
+        server.tasks.get_item_mut(0).unwrap().set_body("New Task 1".to_string());
+        server.tasks.get_item_mut(1).unwrap().set_body("New Task 2".to_string());
+
+        client.sync(&mut server);
+
+        assert!(client.tasks().contains(&&Task::new("New Task 1".to_string(), vec![Weekday::Fri])));
+        assert!(client.tasks().contains(&&Task::new("New Task 2".to_string(), vec![Weekday::Fri])));
+        assert!(client.tasks().contains(&&Task::new("Task 3".to_string(), vec![Weekday::Fri])));
+        assert_eq!(client.tasks().len(), 3);
+
+        assert!(server.tasks().contains(&&Task::new("New Task 1".to_string(), vec![Weekday::Fri])));
+        assert!(server.tasks().contains(&&Task::new("New Task 2".to_string(), vec![Weekday::Fri])));
+        assert!(server.tasks().contains(&&Task::new("Task 3".to_string(), vec![Weekday::Fri])));
+        assert_eq!(server.tasks().len(), 3);
+
+        // Test 3. Removing multiple works.
+        client.remove_task(1).unwrap();
+        client.remove_task(2).unwrap();
+
+        server.sync(&mut client);
+
+        assert!(client.tasks().contains(&&Task::new("New Task 1".to_string(), vec![Weekday::Fri])));
+        assert_eq!(client.tasks().len(), 1);
+
+        assert!(server.tasks().contains(&&Task::new("New Task 1".to_string(), vec![Weekday::Fri])));
+        assert_eq!(server.tasks().len(), 1);
     }
 }
