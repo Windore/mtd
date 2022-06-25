@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```
-//! use chrono::{Local, Weekday};
+//! use chrono::Weekday;
 //! use mtd::{Task, TdList, Todo};
 //!
 //! // Creates a new TdList which is a list that is used for containing Todos and Tasks.
@@ -42,8 +42,9 @@ use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 
-use chrono::{Date, Datelike, Local, Weekday};
+use chrono::{Datelike, Local, NaiveDate, Weekday};
 use rand::random;
+use serde::{Deserialize, Serialize};
 
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
@@ -74,7 +75,7 @@ impl std::error::Error for MtdError {}
 
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
 /// tomorrows date. Today is represented by the current weekday.
-fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
+fn weekday_to_date(weekday: Weekday, mut today: NaiveDate) -> NaiveDate {
     loop {
         if today.weekday() == weekday {
             return today;
@@ -86,12 +87,12 @@ fn weekday_to_date(weekday: Weekday, mut today: Date<Local>) -> Date<Local> {
 /// Represents a one-time task to be done at a specific date. The date is specified as a weekday
 /// from now. If no weekday is given, the current weekday will be used. After the given weekday, the
 /// `Todo` will show up for the current day.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Todo {
     body: String,
-    date: Date<Local>,
+    date: NaiveDate,
     id: u64,
-    done: Option<Date<Local>>,
+    done: Option<NaiveDate>,
     sync_id: u64,
     state: ItemState,
 }
@@ -101,7 +102,7 @@ impl Todo {
     pub fn new_undated(body: String) -> Todo {
         Todo {
             body,
-            date: Local::today(),
+            date: Local::today().naive_local(),
             id: 0,
             done: None,
             sync_id: random(),
@@ -113,7 +114,7 @@ impl Todo {
     pub fn new_dated(body: String, weekday: Weekday) -> Todo {
         Todo {
             body,
-            date: weekday_to_date(weekday, Local::today()),
+            date: weekday_to_date(weekday, Local::today().naive_local()),
             id: 0,
             done: None,
             sync_id: random(),
@@ -123,7 +124,7 @@ impl Todo {
 
     // Used for unit testing with non-today dependant date
     #[cfg(test)]
-    fn new_specific_date(body: String, date: Date<Local>) -> Todo {
+    fn new_specific_date(body: String, date: NaiveDate) -> Todo {
         Todo {
             body,
             date,
@@ -144,18 +145,18 @@ impl Todo {
     ///
     /// let todo_for_today = Todo::new_undated("I am for today".to_string());
     ///
-    /// assert!(todo_for_today.for_date(Local::today()));
+    /// assert!(todo_for_today.for_date(Local::today().naive_local()));
     ///
-    /// let todo_for_tomorrow = Todo::new_dated("I am for tomorrow".to_string(), Local::today().succ().weekday());
+    /// let todo_for_tomorrow = Todo::new_dated("I am for tomorrow".to_string(), Local::today().naive_local().succ().weekday());
     ///
-    /// assert!(!todo_for_tomorrow.for_date(Local::today()));
-    /// assert!(todo_for_tomorrow.for_date(Local::today().succ()));
+    /// assert!(!todo_for_tomorrow.for_date(Local::today().naive_local()));
+    /// assert!(todo_for_tomorrow.for_date(Local::today().naive_local().succ()));
     /// ```
-    pub fn for_date(&self, date: Date<Local>) -> bool {
-        self.for_date_wtd(date, Local::today())
+    pub fn for_date(&self, date: NaiveDate) -> bool {
+        self.for_date_wtd(date, Local::today().naive_local())
     }
 
-    fn for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> bool {
+    fn for_date_wtd(&self, date: NaiveDate, today: NaiveDate) -> bool {
         date >= self.date && (date == today || self.date > today)
     }
 
@@ -182,7 +183,7 @@ impl Todo {
 
     /// Sets the weekday of the `Todo`.
     pub fn set_weekday(&mut self, weekday: Weekday) {
-        self.date = weekday_to_date(weekday, Local::today());
+        self.date = weekday_to_date(weekday, Local::today().naive_local());
         self.state = ItemState::Changed;
     }
 
@@ -193,10 +194,10 @@ impl Todo {
 
     /// Sets the done state of the `Todo`.
     pub fn set_done(&mut self, done: bool) {
-        self.set_done_wtd(done, Local::today());
+        self.set_done_wtd(done, Local::today().naive_local());
     }
 
-    fn set_done_wtd(&mut self, done: bool, today: Date<Local>) {
+    fn set_done_wtd(&mut self, done: bool, today: NaiveDate) {
         if done {
             self.done = Some(today);
         } else {
@@ -212,10 +213,10 @@ impl Todo {
     /// Returns `true` if the `Todo` can be removed. A `Todo` can be removed one day after its
     /// completion.
     pub fn can_remove(&self) -> bool {
-        self.can_remove_wtd(Local::today())
+        self.can_remove_wtd(Local::today().naive_local())
     }
 
-    fn can_remove_wtd(&self, today: Date<Local>) -> bool {
+    fn can_remove_wtd(&self, today: NaiveDate) -> bool {
         if let Some(done_date) = self.done {
             today > done_date
         } else {
@@ -239,11 +240,11 @@ impl PartialEq for Todo {
 }
 
 /// Represents a reoccurring task for the given weekday(s).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     body: String,
     weekdays: Vec<Weekday>,
-    done_map: HashMap<Weekday, Date<Local>>,
+    done_map: HashMap<Weekday, NaiveDate>,
     id: u64,
     state: ItemState,
     sync_id: u64,
@@ -336,16 +337,16 @@ impl Task {
     /// # Example
     ///
     /// ```
-    /// use chrono::{Local, TimeZone, Weekday};
+    /// use chrono::{NaiveDate, Weekday};
     /// use mtd::Task;
     ///
     /// let task = Task::new("Task".to_string(), vec![Weekday::Fri, Weekday::Sun]);
     ///
-    /// assert!(task.for_date(Local.ymd(2022, 6, 10))); // 2022-6-10 is a Friday
-    /// assert!(!task.for_date(Local.ymd(2022, 6, 11))); // Saturday
-    /// assert!(task.for_date(Local.ymd(2022, 6, 12))); // Sunday
+    /// assert!(task.for_date(NaiveDate::from_ymd(2022, 6, 10))); // 2022-6-10 is a Friday
+    /// assert!(!task.for_date(NaiveDate::from_ymd(2022, 6, 11))); // Saturday
+    /// assert!(task.for_date(NaiveDate::from_ymd(2022, 6, 12))); // Sunday
     /// ```
-    pub fn for_date(&self, date: Date<Local>) -> bool {
+    pub fn for_date(&self, date: NaiveDate) -> bool {
         self.weekdays.contains(&date.weekday())
     }
 
@@ -355,29 +356,29 @@ impl Task {
     /// # Example
     ///
     /// ```
-    /// use chrono::{Local, TimeZone, Weekday};
+    /// use chrono::{NaiveDate, Weekday};
     /// use mtd::Task;
     ///
     /// let mut task = Task::new("Task".to_string(), vec![Weekday::Mon, Weekday::Wed, Weekday::Thu]);
     ///
-    /// task.set_done(true, Local.ymd(2022, 6, 13));
-    /// task.set_done(true, Local.ymd(2022, 6, 16));
+    /// task.set_done(true, NaiveDate::from_ymd(2022, 6, 13));
+    /// task.set_done(true, NaiveDate::from_ymd(2022, 6, 16));
     ///
     /// // Done for mon and thu
-    /// assert!(task.done(Local.ymd(2022, 6, 13)));
-    /// assert!(task.done(Local.ymd(2022, 6, 16)));
+    /// assert!(task.done(NaiveDate::from_ymd(2022, 6, 13)));
+    /// assert!(task.done(NaiveDate::from_ymd(2022, 6, 16)));
     ///
     /// // Not done for wed
-    /// assert!(!task.done(Local.ymd(2022, 6, 15)));
+    /// assert!(!task.done(NaiveDate::from_ymd(2022, 6, 15)));
     ///
     /// // Not done for the following week's mon/thu
-    /// assert!(!task.done(Local.ymd(2022, 6, 20)));
-    /// assert!(!task.done(Local.ymd(2022, 6, 23)));
+    /// assert!(!task.done(NaiveDate::from_ymd(2022, 6, 20)));
+    /// assert!(!task.done(NaiveDate::from_ymd(2022, 6, 23)));
     ///
     /// // Since 2022-6-21 is a tue, the task is done for that date
-    /// assert!(task.done(Local.ymd(2022, 6, 21)));
+    /// assert!(task.done(NaiveDate::from_ymd(2022, 6, 21)));
     /// ```
-    pub fn done(&self, date: Date<Local>) -> bool {
+    pub fn done(&self, date: NaiveDate) -> bool {
         if self.for_date(date) {
             if let Some(d) = self.done_map.get(&date.weekday()) {
                 return *d >= date;
@@ -394,18 +395,18 @@ impl Task {
     ///
     /// ```
     ///
-    /// use chrono::{Local, TimeZone, Weekday};
+    /// use chrono::{NaiveDate, Weekday};
     /// use mtd::Task;
     ///
     /// let mut task = Task::new("Task".to_string(), vec![Weekday::Mon]);
     ///
-    /// task.set_done(true, Local.ymd(2022, 6, 13));
-    /// assert!(task.done(Local.ymd(2022, 6, 13)));
+    /// task.set_done(true, NaiveDate::from_ymd(2022, 6, 13));
+    /// assert!(task.done(NaiveDate::from_ymd(2022, 6, 13)));
     ///
-    /// task.set_done(false, Local.ymd(2022, 6, 13));
-    /// assert!(!task.done(Local.ymd(2022, 6, 13)));
+    /// task.set_done(false, NaiveDate::from_ymd(2022, 6, 13));
+    /// assert!(!task.done(NaiveDate::from_ymd(2022, 6, 13)));
     /// ```
-    pub fn set_done(&mut self, done: bool, date: Date<Local>) {
+    pub fn set_done(&mut self, done: bool, date: NaiveDate) {
         if done {
             self.done_map.insert(date.weekday(), date);
         } else {
@@ -428,7 +429,7 @@ impl PartialEq for Task {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 enum ItemState {
     New,
     Removed,
@@ -490,7 +491,7 @@ impl SyncItem for Task {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct SyncList<T: SyncItem + Clone> {
     items: Vec<T>,
     server: bool,
@@ -622,7 +623,7 @@ impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
 
 /// A synchronizable list used for containing and managing all `Todo`s and `Task`s. `Todo`s and
 /// `Task`s have `id`s that match their `id`s within the `TdList`.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TdList {
     todos: SyncList<Todo>,
     tasks: SyncList<Task>,
@@ -638,6 +639,16 @@ impl TdList {
     /// Creates a new empty server `TdList`.
     pub fn new_server() -> Self {
         Self { todos: SyncList::new(true), tasks: SyncList::new(true), server: true }
+    }
+
+    /// Creates a ´TdList` from a JSON string.
+    pub fn new_from_json(json: &str) -> serde_json::Result<Self> {
+        serde_json::from_str(json)
+    }
+
+    /// Creates a JSON string from the `TdList`.
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
     }
 
     /// Gets all the `Todo`s in the list.
@@ -687,16 +698,16 @@ impl TdList {
     }
 
     /// Returns all `Todo`s for a given date that are not yet done.
-    pub fn undone_todos_for_date(&self, date: Date<Local>) -> Vec<&Todo> {
-        self.undone_todos_for_date_wtd(date, Local::today())
+    pub fn undone_todos_for_date(&self, date: NaiveDate) -> Vec<&Todo> {
+        self.undone_todos_for_date_wtd(date, Local::today().naive_local())
     }
 
     /// Returns all `Todo`s for a given date that are done.
-    pub fn done_todos_for_date(&self, date: Date<Local>) -> Vec<&Todo> {
-        self.done_todos_for_date_wtd(date, Local::today())
+    pub fn done_todos_for_date(&self, date: NaiveDate) -> Vec<&Todo> {
+        self.done_todos_for_date_wtd(date, Local::today().naive_local())
     }
 
-    fn undone_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
+    fn undone_todos_for_date_wtd(&self, date: NaiveDate, today: NaiveDate) -> Vec<&Todo> {
         let mut undone_todos = Vec::new();
 
         for todo in self.todos.items() {
@@ -708,7 +719,7 @@ impl TdList {
         undone_todos
     }
 
-    fn done_todos_for_date_wtd(&self, date: Date<Local>, today: Date<Local>) -> Vec<&Todo> {
+    fn done_todos_for_date_wtd(&self, date: NaiveDate, today: NaiveDate) -> Vec<&Todo> {
         let mut done_todos = Vec::new();
 
         for todo in self.todos.items() {
@@ -721,7 +732,7 @@ impl TdList {
     }
 
     /// Returns all `Task`s for a given date that are not yet done.
-    pub fn undone_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
+    pub fn undone_tasks_for_date(&self, date: NaiveDate) -> Vec<&Task> {
         let mut undone_tasks = Vec::new();
 
         for task in self.tasks.items() {
@@ -734,7 +745,7 @@ impl TdList {
     }
 
     /// Returns all `Task`s for a given date that are done.
-    pub fn done_tasks_for_date(&self, date: Date<Local>) -> Vec<&Task> {
+    pub fn done_tasks_for_date(&self, date: NaiveDate) -> Vec<&Task> {
         let mut done_tasks = Vec::new();
 
         for task in self.tasks.items() {
@@ -750,10 +761,10 @@ impl TdList {
     /// Basically remove all `Todo`s which `Todo.can_remove()` returns `true`. This is called
     /// automatically every sync.
     pub fn remove_old_todos(&mut self) {
-        self.remove_old_todos_wtd(Local::today());
+        self.remove_old_todos_wtd(Local::today().naive_local());
     }
 
-    fn remove_old_todos_wtd(&mut self, today: Date<Local>) {
+    fn remove_old_todos_wtd(&mut self, today: NaiveDate) {
         for todo in &mut self.todos.items {
             if todo.can_remove_wtd(today) {
                 todo.state = ItemState::Removed;
@@ -833,7 +844,7 @@ impl TdList {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Local, TimeZone, Weekday};
+    use chrono::{NaiveDate, Weekday};
 
     use crate::{MtdError, Task, TdList, Todo, weekday_to_date};
 
@@ -841,7 +852,7 @@ mod tests {
     #[test]
     fn weekday_to_date_returns_correct_dates() {
         // Today is a Tuesday
-        let today = Local.ymd(2022, 6, 7);
+        let today = NaiveDate::from_ymd(2022, 6, 7);
 
         // Tue should return today’s date
         assert_eq!(weekday_to_date(Weekday::Tue, today), today);
@@ -850,7 +861,7 @@ mod tests {
         assert_eq!(weekday_to_date(Weekday::Wed, today), today.succ());
 
         // Mon should return next weeks monday
-        assert_eq!(weekday_to_date(Weekday::Mon, today), Local.ymd(2022, 6, 13));
+        assert_eq!(weekday_to_date(Weekday::Mon, today), NaiveDate::from_ymd(2022, 6, 13));
     }
 
     #[test]
@@ -861,9 +872,9 @@ mod tests {
 
     #[test]
     fn todo_for_date_tests() {
-        let todo = Todo::new_specific_date("Friday".to_string(), Local.ymd(2022, 6, 10));
+        let todo = Todo::new_specific_date("Friday".to_string(), NaiveDate::from_ymd(2022, 6, 10));
 
-        let today = Local.ymd(2022, 6, 10);
+        let today = NaiveDate::from_ymd(2022, 6, 10);
 
         // The following 5 asserts could each be their own unit test but I'm to lazy to do it so
         // instead I just added some comments explaining the tests
@@ -877,12 +888,12 @@ mod tests {
 
     #[test]
     fn todo_can_remove_returns_true_only_after_one_day_from_completion() {
-        let mut todo = Todo::new_specific_date("Todo".to_string(), Local.ymd(2022, 4, 25));
-        todo.set_done_wtd(true, Local.ymd(2022, 4, 26));
+        let mut todo = Todo::new_specific_date("Todo".to_string(), NaiveDate::from_ymd(2022, 4, 25));
+        todo.set_done_wtd(true, NaiveDate::from_ymd(2022, 4, 26));
 
-        assert!(!todo.can_remove_wtd(Local.ymd(2022, 4, 26)));
-        assert!(todo.can_remove_wtd(Local.ymd(2022, 4, 27)));
-        assert!(todo.can_remove_wtd(Local.ymd(2022, 4, 28)));
+        assert!(!todo.can_remove_wtd(NaiveDate::from_ymd(2022, 4, 26)));
+        assert!(todo.can_remove_wtd(NaiveDate::from_ymd(2022, 4, 27)));
+        assert!(todo.can_remove_wtd(NaiveDate::from_ymd(2022, 4, 28)));
     }
 
     #[test]
@@ -987,18 +998,18 @@ mod tests {
     fn tdlist_with_done_and_undone() -> TdList {
         let mut list = TdList::new_client();
 
-        list.add_todo(Todo::new_specific_date("Undone 1".to_string(), Local.ymd(2021, 4, 1)));
-        list.add_todo(Todo::new_specific_date("Undone 2".to_string(), Local.ymd(2021, 3, 29)));
-        list.add_todo(Todo::new_specific_date("Done 1".to_string(), Local.ymd(2021, 4, 1)));
-        list.add_todo(Todo::new_specific_date("Done 2".to_string(), Local.ymd(2021, 3, 30)));
+        list.add_todo(Todo::new_specific_date("Undone 1".to_string(), NaiveDate::from_ymd(2021, 4, 1)));
+        list.add_todo(Todo::new_specific_date("Undone 2".to_string(), NaiveDate::from_ymd(2021, 3, 29)));
+        list.add_todo(Todo::new_specific_date("Done 1".to_string(), NaiveDate::from_ymd(2021, 4, 1)));
+        list.add_todo(Todo::new_specific_date("Done 2".to_string(), NaiveDate::from_ymd(2021, 3, 30)));
 
-        list.get_todo_mut(2).unwrap().set_done_wtd(true, Local.ymd(2021, 4, 1));
-        list.get_todo_mut(3).unwrap().set_done_wtd(true, Local.ymd(2021, 4, 1));
+        list.get_todo_mut(2).unwrap().set_done_wtd(true, NaiveDate::from_ymd(2021, 4, 1));
+        list.get_todo_mut(3).unwrap().set_done_wtd(true, NaiveDate::from_ymd(2021, 4, 1));
 
         list.add_task(Task::new("Undone 1".to_string(), vec![Weekday::Thu]));
         list.add_task(Task::new("Done 1".to_string(), vec![Weekday::Thu]));
 
-        list.get_task_mut(1).unwrap().set_done(true, Local.ymd(2021, 4, 1));
+        list.get_task_mut(1).unwrap().set_done(true, NaiveDate::from_ymd(2021, 4, 1));
 
         list
     }
@@ -1007,7 +1018,7 @@ mod tests {
     fn tdlist_undone_todos_for_date_returns_only_undone() {
         let list = tdlist_with_done_and_undone();
 
-        let returned = list.undone_todos_for_date_wtd(Local.ymd(2021, 4, 1), Local.ymd(2021, 4, 1));
+        let returned = list.undone_todos_for_date_wtd(NaiveDate::from_ymd(2021, 4, 1), NaiveDate::from_ymd(2021, 4, 1));
 
         assert!(returned.contains(&&list.todos()[0]));
         assert!(returned.contains(&&list.todos()[1]));
@@ -1020,7 +1031,7 @@ mod tests {
     fn tdlist_done_todos_for_date_returns_only_done() {
         let list = tdlist_with_done_and_undone();
 
-        let returned = list.done_todos_for_date_wtd(Local.ymd(2021, 4, 1), Local.ymd(2021, 4, 1));
+        let returned = list.done_todos_for_date_wtd(NaiveDate::from_ymd(2021, 4, 1), NaiveDate::from_ymd(2021, 4, 1));
 
         assert!(!returned.contains(&&list.todos()[0]));
         assert!(!returned.contains(&&list.todos()[1]));
@@ -1033,7 +1044,7 @@ mod tests {
     fn tdlist_undone_tasks_for_date_returns_only_undone() {
         let list = tdlist_with_done_and_undone();
 
-        let returned = list.undone_tasks_for_date(Local.ymd(2021, 4, 1));
+        let returned = list.undone_tasks_for_date(NaiveDate::from_ymd(2021, 4, 1));
 
         assert!(returned.contains(&&list.tasks()[0]));
         assert!(!returned.contains(&&list.tasks()[1]));
@@ -1044,7 +1055,7 @@ mod tests {
     fn tdlist_done_tasks_for_date_returns_only_done() {
         let list = tdlist_with_done_and_undone();
 
-        let returned = list.done_tasks_for_date(Local.ymd(2021, 4, 1));
+        let returned = list.done_tasks_for_date(NaiveDate::from_ymd(2021, 4, 1));
 
         assert!(!returned.contains(&&list.tasks()[0]));
         assert!(returned.contains(&&list.tasks()[1]));
@@ -1056,11 +1067,11 @@ mod tests {
         let mut list = tdlist_with_done_and_undone();
         let list_containing_same_todos_for_eq_check = tdlist_with_done_and_undone();
 
-        list.remove_old_todos_wtd(Local.ymd(2021, 4, 1));
+        list.remove_old_todos_wtd(NaiveDate::from_ymd(2021, 4, 1));
 
         assert_eq!(list.todos(), list_containing_same_todos_for_eq_check.todos());
 
-        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+        list.remove_old_todos_wtd(NaiveDate::from_ymd(2021, 4, 2));
 
         assert_eq!(list.todos()[0], list_containing_same_todos_for_eq_check.todos()[0]);
         assert_eq!(list.todos()[1], list_containing_same_todos_for_eq_check.todos()[1]);
@@ -1071,7 +1082,7 @@ mod tests {
     fn tdlist_client_only_self_sync_actually_removes_items() {
         let mut list = tdlist_with_done_and_undone();
 
-        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+        list.remove_old_todos_wtd(NaiveDate::from_ymd(2021, 4, 2));
         list.remove_task(1).unwrap();
 
         assert_eq!(list.todos.items.len(), 4);
@@ -1090,7 +1101,7 @@ mod tests {
         list.todos.server = true;
         list.tasks.server = true;
 
-        list.remove_old_todos_wtd(Local.ymd(2021, 4, 2));
+        list.remove_old_todos_wtd(NaiveDate::from_ymd(2021, 4, 2));
         list.remove_task(1).unwrap();
 
         assert_eq!(list.todos.items.len(), 2);
@@ -1245,5 +1256,20 @@ mod tests {
 
         assert!(server.tasks().contains(&&Task::new("New Task 1".to_string(), vec![Weekday::Fri])));
         assert_eq!(server.tasks().len(), 1);
+    }
+
+    #[test]
+    fn tdlist_to_and_from_json_returns_same() {
+        let list = tdlist_with_done_and_undone();
+
+        let json = list.to_json().unwrap();
+
+        let list_from_json = TdList::new_from_json(&json).unwrap();
+
+        assert_eq!(list.server, list_from_json.server);
+        assert_eq!(list.todos.items, list_from_json.todos.items);
+        assert_eq!(list.tasks.items, list_from_json.tasks.items);
+        assert_eq!(list.tasks.server, list_from_json.tasks.server);
+        assert_eq!(list.todos.server, list_from_json.todos.server);
     }
 }
