@@ -38,6 +38,8 @@
 //! assert_eq!(client.todos()[0].done(), server.todos()[0].done());
 //! ```
 
+#![warn(missing_docs)]
+
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
@@ -45,6 +47,8 @@ use std::fmt::{Debug, Display, Formatter};
 use chrono::{Datelike, Local, NaiveDate, Weekday};
 use rand::random;
 use serde::{Deserialize, Serialize};
+
+pub mod network;
 
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
