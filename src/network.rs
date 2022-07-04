@@ -1,7 +1,7 @@
 //! A Module defining networking functions for MTD such as syncing with a remote server or running a
 //! server. Data transmitted over the network is encrypted.
 
-use std::io;
+use std::{fs, io};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -105,7 +105,8 @@ impl MtdNetMgr {
         self.td_list
     }
 
-    /// Connects to a server and synchronizes the local `TdList` with a server.
+    /// Connects to a server and synchronizes the local `TdList` with a server. Writes the local
+    /// `TdList` if the initialization `Config` defined a `save_location`.
     ///
     /// # Panics
     ///
@@ -156,6 +157,9 @@ impl MtdNetMgr {
         let msg = self.read_check_decrypted(&mut stream, &sid)?;
 
         if msg == b"ok" {
+            if let Some(path) = self.config.save_location() {
+                fs::write(path, self.td_list.to_json()?)?;
+            }
             Ok(())
         } else {
             Err(Error::ServerWriteFailed)
@@ -163,7 +167,8 @@ impl MtdNetMgr {
     }
 
     /// Creates a loop which handles incoming sync connections. Note that each connection is handled in
-    /// the same thread sequentially so only one connection can be processed at a time.
+    /// the same thread sequentially so only one connection can be processed at a time. Writes the local
+    /// `TdList` if the initialization `Config` defined a `save_location`.
     ///
     /// # Panics
     ///
@@ -219,7 +224,12 @@ impl MtdNetMgr {
 
         // Client sends a response with a new synced TdList for the server.
         let msg = self.read_check_decrypted(&mut stream, &sid)?;
-        self.td_list = TdList::new_from_json(&String::from_utf8_lossy(&msg))?;
+        let json_string = String::from_utf8_lossy(&msg).to_string();
+        self.td_list = TdList::new_from_json(&json_string)?;
+
+        if let Some(path) = self.config.save_location() {
+            fs::write(path, &json_string)?;
+        }
 
         // Send ok to the client to verify that everything went right.
         self.write_encrypted(&mut stream, &[&sid, b"ok".as_slice()].concat())?;
@@ -266,8 +276,9 @@ impl MtdNetMgr {
 
 #[cfg(test)]
 mod network_tests {
+    use std::{env, fs, thread};
     use std::net::{IpAddr, Ipv4Addr};
-    use std::thread;
+    use std::path::Path;
     use std::time::Duration;
 
     use crate::{Config, TdList, Todo};
@@ -289,6 +300,8 @@ mod network_tests {
             .client_sync(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     }
 
+    // This test tests more than one thing, but I believe it to be rather useful. Running more than
+    // one test takes more time and this test (and its sub-parts) also depends on external state (IO).
     #[test]
     fn mtd_net_mgr_syncs_correctly() {
         let mut client = TdList::new_client();
@@ -302,9 +315,16 @@ mod network_tests {
         server.get_todo_mut(0).unwrap().set_body("New Todo 1".to_string());
         server.add_todo(Todo::new_undated("Todo 2".to_string()));
 
-        let conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), None);
-        let mut server_mgr = MtdNetMgr::new(server, conf.clone());
-        let mut client_mgr = MtdNetMgr::new(client, conf);
+        client.add_todo(Todo::new_undated("Todo 3".to_string()));
+
+        let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
+        let client_path = env::temp_dir().join(Path::new("mtd-client-write-test-file"));
+
+        let server_conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
+        let client_conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), Some(client_path.clone()));
+
+        let mut server_mgr = MtdNetMgr::new(server, server_conf);
+        let mut client_mgr = MtdNetMgr::new(client, client_conf);
 
         thread::spawn(move || {
             server_mgr.server_listening_loop().unwrap();
@@ -316,9 +336,24 @@ mod network_tests {
 
         let client = client_mgr.td_list();
 
-        assert_eq!(client.todos().len(), 2);
+        assert_eq!(client.todos().len(), 3);
         assert!(client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
         assert!(client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+        assert!(client.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
+
+        let server = TdList::new_from_json(&fs::read_to_string(server_path).unwrap()).unwrap();
+
+        assert_eq!(server.todos().len(), 3);
+        assert!(server.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+        assert!(server.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+        assert!(server.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
+
+        let written_client = TdList::new_from_json(&fs::read_to_string(client_path).unwrap()).unwrap();
+
+        assert_eq!(written_client.todos().len(), 3);
+        assert!(written_client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
+        assert!(written_client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
+        assert!(written_client.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
     }
 }
 
