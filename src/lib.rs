@@ -45,6 +45,7 @@ extern crate core;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::io;
 
 use chrono::{Datelike, Local, NaiveDate, Weekday};
 use rand::random;
@@ -55,29 +56,72 @@ pub mod network;
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
 
-/// Custom errors returned by this crate.
-#[derive(Debug, PartialEq)]
-pub enum MtdError {
+/// Custom errors returned by this crate. Some errors wrap existing errors.
+#[derive(Debug)]
+pub enum Error {
     /// Indicates that no `Todo` with the given `id` exists.
-    NoTodoWithGivenId(u64),
+    NoTodoWithGivenIdErr(u64),
     /// Indicates that no `Task` with the given `id` exists.
-    NoTaskWithGivenId(u64),
+    NoTaskWithGivenIdErr(u64),
+    /// Indicates that encrypting data failed.
+    EncryptingErr,
+    /// Indicates that decrypting data failed. The two common reasons for this error are incorrect
+    /// passwords or tampered ciphertexts.
+    DecryptingErr,
+    /// Indicates that something IO related failed.
+    IoErr(io::Error),
+    /// Indicates that serialization failed.
+    SerdeErr(serde_json::Error),
+    /// Indicates that authentication of the client/server failed.
+    AuthErr,
+    /// Writing `TdList` on a server failed. Server didn't respond with a success signal.
+    ServerWriteFailed,
 }
 
-impl Display for MtdError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MtdError::NoTodoWithGivenId(id) => {
+            Error::NoTodoWithGivenIdErr(id) => {
                 write!(f, "No Todo with the given id: \"{}\" found.", id)
             }
-            MtdError::NoTaskWithGivenId(id) => {
+            Error::NoTaskWithGivenIdErr(id) => {
                 write!(f, "No Task with the given id: \"{}\" found.", id)
+            }
+            Error::EncryptingErr => {
+                write!(f, "Encrypting data failed.")
+            }
+            Error::DecryptingErr => {
+                write!(f, "Decrypting data failed.")
+            }
+            Error::IoErr(e) => {
+                write!(f, "{}", e)
+            }
+            Error::SerdeErr(e) => {
+                write!(f, "{}", e)
+            }
+            Error::AuthErr => {
+                write!(f, "Authentication failed.")
+            }
+            Error::ServerWriteFailed => {
+                write!(f, "Writing data to server failed.")
             }
         }
     }
 }
 
-impl std::error::Error for MtdError {}
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoErr(e)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::SerdeErr(e)
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
 /// tomorrows date. Today is represented by the current weekday.
@@ -681,14 +725,14 @@ impl TdList {
 
     /// Removes the `Todo` that matches the given id. If no `Todo` with the given `id` exists, returns
     /// a `MtdError`.
-    pub fn remove_todo(&mut self, id: u64) -> Result<(), MtdError> {
-        self.todos.mark_removed(id).map_err(|_| MtdError::NoTodoWithGivenId(id))
+    pub fn remove_todo(&mut self, id: u64) -> Result<(), Error> {
+        self.todos.mark_removed(id).map_err(|_| Error::NoTodoWithGivenIdErr(id))
     }
 
     /// Removes the `Task` that matches the given id. If no `Task` with the given `id` exists, returns
     /// a `MtdError`.
-    pub fn remove_task(&mut self, id: u64) -> Result<(), MtdError> {
-        self.tasks.mark_removed(id).map_err(|_| MtdError::NoTaskWithGivenId(id))
+    pub fn remove_task(&mut self, id: u64) -> Result<(), Error> {
+        self.tasks.mark_removed(id).map_err(|_| Error::NoTaskWithGivenIdErr(id))
     }
 
     /// Returns a mutable reference to a `Todo` by its `id`. If no `Todo` with the given `id` exists
@@ -852,7 +896,7 @@ impl TdList {
 mod tests {
     use chrono::{NaiveDate, Weekday};
 
-    use crate::{MtdError, Task, TdList, Todo, weekday_to_date};
+    use crate::{Task, TdList, Todo, weekday_to_date};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
@@ -960,7 +1004,7 @@ mod tests {
         list.add_todo(Todo::new_undated("Todo 0".to_string()));
         list.add_todo(Todo::new_undated("Todo 1".to_string()));
 
-        assert_eq!(list.remove_todo(2).err().unwrap(), MtdError::NoTodoWithGivenId(2));
+        assert!(list.remove_todo(2).is_err());
     }
 
     #[test]
@@ -998,7 +1042,7 @@ mod tests {
         list.add_task(Task::new("Task 0".to_string(), vec![Weekday::Mon]));
         list.add_task(Task::new("Task 1".to_string(), vec![Weekday::Mon]));
 
-        assert_eq!(list.remove_task(2).err().unwrap(), MtdError::NoTaskWithGivenId(2));
+        assert!(list.remove_todo(2).is_err());
     }
 
     fn tdlist_with_done_and_undone() -> TdList {

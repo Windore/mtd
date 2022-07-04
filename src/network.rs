@@ -1,7 +1,6 @@
 //! A Module defining networking functions for MTD such as syncing with a remote server or running a
 //! server. Data transmitted over the network is encrypted.
 
-use std::fmt::{Display, Formatter};
 use std::io;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -9,63 +8,8 @@ use std::time::Duration;
 
 use rand::random;
 
+use crate::{Error, TdList};
 use crate::network::crypt::{decrypt, encrypt};
-use crate::TdList;
-
-/// An networking and crypt related error.
-#[derive(Debug)]
-pub enum Error {
-    /// Indicates that encrypting data failed.
-    EncryptingErr,
-    /// Indicates that decrypting data failed. The two common reasons for this error are incorrect
-    /// passwords or tampered ciphertexts.
-    DecryptingErr,
-    /// Indicates that something IO related failed.
-    IoErr(io::Error),
-    /// Indicates that serialization failed.
-    SerdeErr(serde_json::Error),
-    /// Indicates that authentication of the client/server failed.
-    AuthErr,
-    /// Writing `TdList` on a server failed. Server didn't respond with a success signal.
-    ServerWriteFailed,
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::EncryptingErr => {
-                write!(f, "Encrypting data failed.")
-            }
-            Error::DecryptingErr => {
-                write!(f, "Decrypting data failed.")
-            }
-            Error::IoErr(e) => {
-                write!(f, "{}", e)
-            }
-            Error::SerdeErr(e) => {
-                write!(f, "{}", e)
-            }
-            Error::AuthErr => {
-                write!(f, "Authentication failed.")
-            }
-            Error::ServerWriteFailed => {
-                write!(f, "Writing data to server failed.")
-            }
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::IoErr(e)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::SerdeErr(e)
-    }
-}
 
 /// A struct used for synchronizing `TdList`s between a client and a server.
 /// `MtdNetMgr` can act both as a client and as a server.
