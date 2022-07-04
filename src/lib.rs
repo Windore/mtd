@@ -40,10 +40,10 @@
 
 #![warn(missing_docs)]
 
+use std::{io, result};
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::io;
 
 use chrono::{Datelike, Local, NaiveDate, Weekday};
 use rand::random;
@@ -55,53 +55,56 @@ mod network;
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
 
+/// Alias for `Result` with the error type `mtd::Error`.
+pub type Result<T> = result::Result<T, Error>;
+
 /// Custom errors returned by this crate. Some errors wrap existing errors.
 #[derive(Debug)]
 pub enum Error {
-    /// Indicates that no `Todo` with the given `id` exists.
-    NoTodoWithGivenIdErr(u64),
-    /// Indicates that no `Task` with the given `id` exists.
-    NoTaskWithGivenIdErr(u64),
-    /// Indicates that encrypting data failed.
-    EncryptingErr,
-    /// Indicates that decrypting data failed. The two common reasons for this error are incorrect
+    /// No `Todo` with the given `id` exists.
+    NoTodoWithGivenId(u64),
+    /// No `Task` with the given `id` exists.
+    NoTaskWithGivenId(u64),
+    /// Encrypting data failed.
+    EncryptingFailed,
+    /// Decrypting data failed. The two common reasons for this error are incorrect
     /// passwords or tampered ciphertexts.
-    DecryptingErr,
-    /// Indicates that something IO related failed.
-    IoErr(io::Error),
-    /// Indicates that serialization failed.
+    DecryptingFailed,
+    /// IO operation failed. Wrapper for `std::io::Error`s.
+    IOErr(io::Error),
+    /// Serialization failed. Wrapper for `serde_json::Error`s.
     SerdeErr(serde_json::Error),
-    /// Indicates that authentication of the client/server failed.
-    AuthErr,
-    /// Writing `TdList` on a server failed. Server didn't respond with a success signal.
-    ServerWriteFailed,
+    /// Authentication of the client/server failed.
+    AuthFailed,
+    /// Unspecified error for rare edge cases that most of the time are handled internally.
+    Other,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NoTodoWithGivenIdErr(id) => {
+            Error::NoTodoWithGivenId(id) => {
                 write!(f, "No Todo with the given id: \"{}\" found.", id)
             }
-            Error::NoTaskWithGivenIdErr(id) => {
+            Error::NoTaskWithGivenId(id) => {
                 write!(f, "No Task with the given id: \"{}\" found.", id)
             }
-            Error::EncryptingErr => {
+            Error::EncryptingFailed => {
                 write!(f, "Encrypting data failed.")
             }
-            Error::DecryptingErr => {
+            Error::DecryptingFailed => {
                 write!(f, "Decrypting data failed.")
             }
-            Error::IoErr(e) => {
+            Error::IOErr(e) => {
                 write!(f, "{}", e)
             }
             Error::SerdeErr(e) => {
                 write!(f, "{}", e)
             }
-            Error::AuthErr => {
+            Error::AuthFailed => {
                 write!(f, "Authentication failed.")
             }
-            Error::ServerWriteFailed => {
+            Error::Other => {
                 write!(f, "Writing data to server failed.")
             }
         }
@@ -110,7 +113,7 @@ impl Display for Error {
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        Error::IoErr(e)
+        Error::IOErr(e)
     }
 }
 
@@ -557,15 +560,15 @@ impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
         item.set_state(ItemState::New);
         self.items.push(item);
     }
-    fn mark_removed(&mut self, id: u64) -> Result<(), ()> {
+    fn mark_removed(&mut self, id: u64) -> Result<()> {
         if id >= self.items.len() as u64 {
-            return Err(());
+            return Err(Error::Other);
         }
         let item = self.items[id as usize].borrow_mut();
 
         // Do not allow the removal of items already removed.
         if item.state() == ItemState::Removed {
-            return Err(());
+            return Err(Error::Other);
         }
 
         item.set_state(ItemState::Removed);
@@ -691,13 +694,13 @@ impl TdList {
     }
 
     /// Creates a ´TdList` from a JSON string.
-    pub fn new_from_json(json: &str) -> serde_json::Result<Self> {
-        serde_json::from_str(json)
+    pub fn new_from_json(json: &str) -> Result<Self> {
+        Ok(serde_json::from_str(json)?)
     }
 
     /// Creates a JSON string from the `TdList`.
-    pub fn to_json(&self) -> serde_json::Result<String> {
-        serde_json::to_string(self)
+    pub fn to_json(&self) -> Result<String> {
+        Ok(serde_json::to_string(self)?)
     }
 
     /// Gets all the `Todo`s in the list.
@@ -724,14 +727,14 @@ impl TdList {
 
     /// Removes the `Todo` that matches the given id. If no `Todo` with the given `id` exists, returns
     /// a `MtdError`.
-    pub fn remove_todo(&mut self, id: u64) -> Result<(), Error> {
-        self.todos.mark_removed(id).map_err(|_| Error::NoTodoWithGivenIdErr(id))
+    pub fn remove_todo(&mut self, id: u64) -> Result<()> {
+        self.todos.mark_removed(id).map_err(|_| Error::NoTodoWithGivenId(id))
     }
 
     /// Removes the `Task` that matches the given id. If no `Task` with the given `id` exists, returns
     /// a `MtdError`.
-    pub fn remove_task(&mut self, id: u64) -> Result<(), Error> {
-        self.tasks.mark_removed(id).map_err(|_| Error::NoTaskWithGivenIdErr(id))
+    pub fn remove_task(&mut self, id: u64) -> Result<()> {
+        self.tasks.mark_removed(id).map_err(|_| Error::NoTaskWithGivenId(id))
     }
 
     /// Returns a mutable reference to a `Todo` by its `id`. If no `Todo` with the given `id` exists

@@ -10,7 +10,7 @@ use std::time::Duration;
 use rand::random;
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, TdList};
+use crate::{Error, Result, TdList};
 use crate::network::crypt::{decrypt, encrypt};
 
 /// A config specifying how a `MtdNetMgr` should function.
@@ -37,11 +37,11 @@ impl Config {
         }
     }
     /// Creates a ´Config` from a JSON string.
-    pub fn new_from_json(json: &str) -> Result<Self, Error> {
+    pub fn new_from_json(json: &str) -> Result<Self> {
         Ok(serde_json::from_str(json)?)
     }
     /// Creates a JSON string from the `Config`.
-    pub fn to_json(&self) -> Result<String, Error> {
+    pub fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string(self)?)
     }
     /// Returns the `Config`'s port.
@@ -121,7 +121,7 @@ impl MtdNetMgr {
     /// # Panics
     ///
     /// If the `TdList` is a server list.
-    pub fn client_sync(&mut self) -> Result<(), Error> {
+    pub fn client_sync(&mut self) -> Result<()> {
         if self.td_list.server {
             panic!("Cannot start a client sync with a server TdList");
         }
@@ -138,7 +138,7 @@ impl MtdNetMgr {
         // Server responds with a session id and the previous random data.
         let msg = self.read_decrypted(&mut stream)?;
         if msg.len() < 16 {
-            return Err(Error::AuthErr);
+            return Err(Error::AuthFailed);
         }
 
         // set session id
@@ -147,7 +147,7 @@ impl MtdNetMgr {
 
         // Check random data
         if auth_data != random_auth_data {
-            return Err(Error::AuthErr);
+            return Err(Error::AuthFailed);
         }
 
         // Send read command to server to verify our authenticity.
@@ -171,7 +171,7 @@ impl MtdNetMgr {
             }
             Ok(())
         } else {
-            Err(Error::ServerWriteFailed)
+            Err(Error::Other)
         }
     }
 
@@ -201,7 +201,7 @@ impl MtdNetMgr {
         Ok(())
     }
 
-    fn handle_stream(&mut self, stream: io::Result<TcpStream>) -> Result<(), Error> {
+    fn handle_stream(&mut self, stream: io::Result<TcpStream>) -> Result<()> {
         let mut stream = stream?;
 
         stream.set_read_timeout(Some(self.config.timeout()))?;
@@ -244,7 +244,7 @@ impl MtdNetMgr {
     }
 
     /// Encrypts and writes a message to a `TcpStream`.
-    fn write_encrypted(&self, stream: &mut TcpStream, content: &[u8]) -> Result<(), Error> {
+    fn write_encrypted(&self, stream: &mut TcpStream, content: &[u8]) -> Result<()> {
         let enc = encrypt(content, &self.config.encryption_password())?;
         let len = enc.len() as u32;
         let len_header = len.to_le_bytes();
@@ -254,7 +254,7 @@ impl MtdNetMgr {
     }
 
     /// Reads a message from a `TcpStream` and decrypts it.
-    fn read_decrypted(&self, stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
+    fn read_decrypted(&self, stream: &mut TcpStream) -> Result<Vec<u8>> {
         let mut msg_len_header = [0u8; 4];
         stream.read_exact(&mut msg_len_header)?;
         let len = u32::from_le_bytes(msg_len_header);
@@ -265,17 +265,17 @@ impl MtdNetMgr {
 
     /// Reads a message from a `TcpStream` and decrypts it. Checks the message's session id and returns
     /// the message without a session id.
-    fn read_check_decrypted(&self, stream: &mut TcpStream, correct_sid: &[u8; 8]) -> Result<Vec<u8>, Error> {
+    fn read_check_decrypted(&self, stream: &mut TcpStream, correct_sid: &[u8; 8]) -> Result<Vec<u8>> {
         MtdNetMgr::check_sid(correct_sid, &self.read_decrypted(stream)?).map(|l| l.to_vec())
     }
 
     /// Checks if a message contains a valid session id. Returns the message without the session id
     /// if the session id is correct. Otherwise returns an Err.
-    fn check_sid<'a>(correct_sid: &[u8; 8], msg_with_sid: &'a [u8]) -> Result<&'a [u8], Error> {
+    fn check_sid<'a>(correct_sid: &[u8; 8], msg_with_sid: &'a [u8]) -> Result<&'a [u8]> {
         if msg_with_sid.len() >= 8 && &msg_with_sid[..8] == correct_sid {
             Ok(&msg_with_sid[8..])
         } else {
-            Err(Error::AuthErr)
+            Err(Error::AuthFailed)
         }
     }
 }
@@ -380,7 +380,7 @@ mod crypt {
         let argon2 = Argon2::default();
 
         let mut secret_passwd_hash: [u8; 32] = [0; 32];
-        argon2.hash_password_into(passwd, &key_salt, &mut secret_passwd_hash).map_err(|_| Error::EncryptingErr)?;
+        argon2.hash_password_into(passwd, &key_salt, &mut secret_passwd_hash).map_err(|_| Error::EncryptingFailed)?;
         let encryption_key = Key::from_slice(&secret_passwd_hash);
 
         let cipher = Aes256Gcm::new(encryption_key);
@@ -389,7 +389,7 @@ mod crypt {
         let nonce_bits: [u8; 12] = random();
         let nonce = Nonce::from_slice(nonce_bits.as_slice());
 
-        let mut ciphertext = cipher.encrypt(nonce, msg).map_err(|_| Error::EncryptingErr)?;
+        let mut ciphertext = cipher.encrypt(nonce, msg).map_err(|_| Error::EncryptingFailed)?;
 
         let mut result = Vec::new();
 
@@ -406,7 +406,7 @@ mod crypt {
         let argon2 = Argon2::default();
 
         let mut secret_passwd_hash: [u8; 32] = [0; 32];
-        argon2.hash_password_into(passwd, key_salt, &mut secret_passwd_hash).map_err(|_| Error::DecryptingErr)?;
+        argon2.hash_password_into(passwd, key_salt, &mut secret_passwd_hash).map_err(|_| Error::DecryptingFailed)?;
         let decryption_key = Key::from_slice(&secret_passwd_hash);
 
         let cipher = Aes256Gcm::new(decryption_key);
@@ -414,7 +414,7 @@ mod crypt {
         let nonce_bits = &ciphertext[16..28];
         let nonce = Nonce::from_slice(nonce_bits);
 
-        Ok(cipher.decrypt(nonce, &ciphertext[28..]).map_err(|_| Error::DecryptingErr)?)
+        Ok(cipher.decrypt(nonce, &ciphertext[28..]).map_err(|_| Error::DecryptingFailed)?)
     }
 
     #[cfg(test)]
