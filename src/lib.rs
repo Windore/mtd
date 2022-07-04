@@ -51,8 +51,9 @@ use chrono::{Datelike, Local, NaiveDate, Weekday};
 use rand::random;
 use serde::{Deserialize, Serialize};
 
-pub mod network;
+pub use network::MtdNetMgr;
 
+mod network;
 // Methods ending with _wtd are used for unit testing and internal implementations. They allow
 // supplying today with any date.
 

@@ -11,8 +11,42 @@ use rand::random;
 use crate::{Error, TdList};
 use crate::network::crypt::{decrypt, encrypt};
 
-/// A struct used for synchronizing `TdList`s between a client and a server.
-/// `MtdNetMgr` can act both as a client and as a server.
+/// A struct used for synchronizing `TdList`s between a client and a server over the network. All
+/// transmitted data is encrypted using AES GCM. `MtdNetMgr` can act both as a client and as a server.
+///
+/// # Example
+///
+/// ```
+/// use std::net::{IpAddr, Ipv4Addr};
+/// use std::thread;
+/// use std::time::Duration;
+/// use mtd::{MtdNetMgr, TdList, Todo};
+///
+/// let port = 55995;
+/// let password = b"Very secure password.";
+/// let timeout = Duration::from_secs(30);
+///
+/// // Create a new thread to act as a server.
+/// thread::spawn(move || {
+///     let mut server_list = TdList::new_server();
+///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
+///
+///     let mut server_mgr = MtdNetMgr::new(server_list, password.to_vec(), port, timeout);
+///
+///     server_mgr.server_listening_loop().unwrap();
+/// });
+///
+/// // Give the server some time to bind to a port etc.
+/// thread::sleep(Duration::from_millis(500));
+///
+/// let mut client_list = TdList::new_client();
+///
+/// let mut client_mgr = MtdNetMgr::new(client_list, password.to_vec(), port, timeout);
+/// client_mgr.client_sync(IpAddr::V4(Ipv4Addr::LOCALHOST)).unwrap();
+///
+/// let client_list = client_mgr.td_list();
+/// assert!(client_list.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
+/// ```
 pub struct MtdNetMgr {
     td_list: TdList,
     encryption_passwd: Vec<u8>,
@@ -219,7 +253,7 @@ mod network_tests {
         let mut server = TdList::new_server();
 
         let passwd = b"hunter42".to_vec();
-        let port = 55995;
+        let port = 55996;
         let timeout = Duration::from_secs(30);
 
         server.add_todo(Todo::new_undated("Todo 1".to_string()));
@@ -253,7 +287,7 @@ mod network_tests {
 /// communication. Data is encrypted with AES-GCM. The encryption key is generated from a password
 /// using Argon2. For network communications, session ids should be used in addition to encrypting
 /// data.
-pub mod crypt {
+mod crypt {
     use aes_gcm::{Aes256Gcm, Key, Nonce};
     use aes_gcm::aead::{Aead, NewAead};
     use argon2::Argon2;
