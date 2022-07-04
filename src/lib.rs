@@ -40,6 +40,8 @@
 
 #![warn(missing_docs)]
 
+extern crate core;
+
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
