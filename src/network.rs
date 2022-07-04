@@ -4,6 +4,7 @@
 use std::io;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use rand::random;
@@ -11,8 +12,51 @@ use rand::random;
 use crate::{Error, TdList};
 use crate::network::crypt::{decrypt, encrypt};
 
+/// A config specifying how a `MtdNetMgr` should function.
+#[derive(Clone, Debug)]
+pub struct Config {
+    port: u16,
+    encryption_password: Vec<u8>,
+    timeout: Duration,
+    save_location: Option<PathBuf>,
+}
+
+impl Config {
+    /// Creates a new `Config` with explicit values.
+    pub fn new(port: u16, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>) -> Self {
+        Self { port, encryption_password, timeout, save_location }
+    }
+    /// Creates a new `Config` with default values.
+    pub fn new_default(encryption_password: Vec<u8>) -> Self {
+        Self {
+            port: 55995,
+            encryption_password,
+            timeout: Duration::from_secs(30),
+            save_location: None,
+        }
+    }
+    /// Returns the `Config`'s port.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+    /// Returns the `Config`'s encryption password.
+    pub fn encryption_password(&self) -> &Vec<u8> {
+        &self.encryption_password
+    }
+    /// Returns the `Config`'s timeout duration.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+    /// Returns the `Config`'s save location.
+    pub fn save_location(&self) -> &Option<PathBuf> {
+        &self.save_location
+    }
+}
+
 /// A struct used for synchronizing `TdList`s between a client and a server over the network. All
 /// transmitted data is encrypted using AES GCM. `MtdNetMgr` can act both as a client and as a server.
+/// After synchronization data is written to the disk both on the server and the client if the config
+/// specifies a `save_location`.
 ///
 /// # Example
 ///
@@ -20,18 +64,16 @@ use crate::network::crypt::{decrypt, encrypt};
 /// use std::net::{IpAddr, Ipv4Addr};
 /// use std::thread;
 /// use std::time::Duration;
-/// use mtd::{MtdNetMgr, TdList, Todo};
+/// use mtd::{Config, MtdNetMgr, TdList, Todo};
 ///
-/// let port = 55995;
 /// let password = b"Very secure password.";
-/// let timeout = Duration::from_secs(30);
 ///
 /// // Create a new thread to act as a server.
 /// thread::spawn(move || {
 ///     let mut server_list = TdList::new_server();
 ///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
 ///
-///     let mut server_mgr = MtdNetMgr::new(server_list, password.to_vec(), port, timeout);
+///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec()));
 ///
 ///     server_mgr.server_listening_loop().unwrap();
 /// });
@@ -41,7 +83,7 @@ use crate::network::crypt::{decrypt, encrypt};
 ///
 /// let mut client_list = TdList::new_client();
 ///
-/// let mut client_mgr = MtdNetMgr::new(client_list, password.to_vec(), port, timeout);
+/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec()));
 /// client_mgr.client_sync(IpAddr::V4(Ipv4Addr::LOCALHOST)).unwrap();
 ///
 /// let client_list = client_mgr.td_list();
@@ -49,15 +91,13 @@ use crate::network::crypt::{decrypt, encrypt};
 /// ```
 pub struct MtdNetMgr {
     td_list: TdList,
-    encryption_passwd: Vec<u8>,
-    port: u16,
-    timeout: Duration,
+    config: Config,
 }
 
 impl MtdNetMgr {
     /// Creates a new `MtdNetMgr`.
-    pub fn new(td_list: TdList, encryption_passwd: Vec<u8>, port: u16, timeout: Duration) -> Self {
-        Self { td_list, encryption_passwd, port, timeout }
+    pub fn new(td_list: TdList, config: Config) -> Self {
+        Self { td_list, config }
     }
 
     /// Returns the contained `TdList`.
@@ -75,11 +115,11 @@ impl MtdNetMgr {
             panic!("Cannot start a client sync with a server TdList");
         }
 
-        let addr = SocketAddr::new(addr, self.port);
+        let addr = SocketAddr::new(addr, self.config.port());
         let mut stream = TcpStream::connect(addr)?;
 
-        stream.set_read_timeout(Some(self.timeout))?;
-        stream.set_write_timeout(Some(self.timeout))?;
+        stream.set_read_timeout(Some(self.config.timeout()))?;
+        stream.set_write_timeout(Some(self.config.timeout()))?;
 
         // Send random data to the server to verify that the server is authentic.
         let random_auth_data: [u8; 8] = random();
@@ -135,7 +175,7 @@ impl MtdNetMgr {
 
         let tcp = TcpListener::bind(SocketAddr::new(
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            self.port,
+            self.config.port(),
         ))?;
 
         for stream in tcp.incoming() {
@@ -153,8 +193,8 @@ impl MtdNetMgr {
     fn handle_stream(&mut self, stream: io::Result<TcpStream>) -> Result<(), Error> {
         let mut stream = stream?;
 
-        stream.set_read_timeout(Some(self.timeout))?;
-        stream.set_write_timeout(Some(self.timeout))?;
+        stream.set_read_timeout(Some(self.config.timeout()))?;
+        stream.set_write_timeout(Some(self.config.timeout()))?;
 
         // Random session id for the sync exchange.
         let sid: [u8; 8] = random();
@@ -189,7 +229,7 @@ impl MtdNetMgr {
 
     /// Encrypts and writes a message to a `TcpStream`.
     fn write_encrypted(&self, stream: &mut TcpStream, content: &[u8]) -> Result<(), Error> {
-        let enc = encrypt(content, &self.encryption_passwd)?;
+        let enc = encrypt(content, &self.config.encryption_password())?;
         let len = enc.len() as u32;
         let len_header = len.to_le_bytes();
         stream.write(&len_header)?;
@@ -204,7 +244,7 @@ impl MtdNetMgr {
         let len = u32::from_le_bytes(msg_len_header);
         let mut encrypted_msg = vec![0u8; len as usize];
         stream.read_exact(&mut encrypted_msg)?;
-        decrypt(&encrypted_msg, &self.encryption_passwd)
+        decrypt(&encrypted_msg, &self.config.encryption_password())
     }
 
     /// Reads a message from a `TcpStream` and decrypts it. Checks the message's session id and returns
@@ -230,20 +270,22 @@ mod network_tests {
     use std::thread;
     use std::time::Duration;
 
-    use crate::{TdList, Todo};
+    use crate::{Config, TdList, Todo};
     use crate::network::MtdNetMgr;
 
     #[test]
     #[should_panic]
     fn mtd_net_mgr_panics_if_server_listener_ran_with_client_td_list() {
-        let _ = MtdNetMgr::new(TdList::new_client(), Vec::new(), 55995, Duration::from_secs(60))
+        let conf = Config::new(55996, Vec::new(), Duration::from_secs(30), None);
+        let _ = MtdNetMgr::new(TdList::new_client(), conf)
             .server_listening_loop();
     }
 
     #[test]
     #[should_panic]
     fn mtd_net_mgr_panics_if_client_sync_ran_with_server_td_list() {
-        let _ = MtdNetMgr::new(TdList::new_server(), Vec::new(), 55995, Duration::from_secs(60))
+        let conf = Config::new(55996, Vec::new(), Duration::from_secs(30), None);
+        let _ = MtdNetMgr::new(TdList::new_server(), conf)
             .client_sync(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     }
 
@@ -251,10 +293,6 @@ mod network_tests {
     fn mtd_net_mgr_syncs_correctly() {
         let mut client = TdList::new_client();
         let mut server = TdList::new_server();
-
-        let passwd = b"hunter42".to_vec();
-        let port = 55996;
-        let timeout = Duration::from_secs(30);
 
         server.add_todo(Todo::new_undated("Todo 1".to_string()));
 
@@ -264,8 +302,9 @@ mod network_tests {
         server.get_todo_mut(0).unwrap().set_body("New Todo 1".to_string());
         server.add_todo(Todo::new_undated("Todo 2".to_string()));
 
-        let mut server_mgr = MtdNetMgr::new(server, passwd.clone(), port, timeout);
-        let mut client_mgr = MtdNetMgr::new(client, passwd, port, timeout);
+        let conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), None);
+        let mut server_mgr = MtdNetMgr::new(server, conf.clone());
+        let mut client_mgr = MtdNetMgr::new(client, conf);
 
         thread::spawn(move || {
             server_mgr.server_listening_loop().unwrap();
