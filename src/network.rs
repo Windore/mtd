@@ -3,19 +3,20 @@
 
 use std::{fs, io};
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use rand::random;
+use serde::{Deserialize, Serialize};
 
 use crate::{Error, TdList};
 use crate::network::crypt::{decrypt, encrypt};
 
 /// A config specifying how a `MtdNetMgr` should function.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    port: u16,
+    socket_addr: SocketAddr,
     encryption_password: Vec<u8>,
     timeout: Duration,
     save_location: Option<PathBuf>,
@@ -23,21 +24,29 @@ pub struct Config {
 
 impl Config {
     /// Creates a new `Config` with explicit values.
-    pub fn new(port: u16, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>) -> Self {
-        Self { port, encryption_password, timeout, save_location }
+    pub fn new(socket_addr: SocketAddr, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>) -> Self {
+        Self { socket_addr, encryption_password, timeout, save_location }
     }
     /// Creates a new `Config` with default values.
-    pub fn new_default(encryption_password: Vec<u8>) -> Self {
+    pub fn new_default(encryption_password: Vec<u8>, socket_addr: SocketAddr) -> Self {
         Self {
-            port: 55995,
+            socket_addr,
             encryption_password,
             timeout: Duration::from_secs(30),
             save_location: None,
         }
     }
+    /// Creates a ´Config` from a JSON string.
+    pub fn new_from_json(json: &str) -> Result<Self, Error> {
+        Ok(serde_json::from_str(json)?)
+    }
+    /// Creates a JSON string from the `Config`.
+    pub fn to_json(&self) -> Result<String, Error> {
+        Ok(serde_json::to_string(self)?)
+    }
     /// Returns the `Config`'s port.
-    pub fn port(&self) -> u16 {
-        self.port
+    pub fn socket_addr(&self) -> SocketAddr {
+        self.socket_addr
     }
     /// Returns the `Config`'s encryption password.
     pub fn encryption_password(&self) -> &Vec<u8> {
@@ -67,13 +76,14 @@ impl Config {
 /// use mtd::{Config, MtdNetMgr, TdList, Todo};
 ///
 /// let password = b"Very secure password.";
+/// let addr = "127.0.0.1:55995".parse().unwrap();
 ///
 /// // Create a new thread to act as a server.
 /// thread::spawn(move || {
 ///     let mut server_list = TdList::new_server();
 ///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
 ///
-///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec()));
+///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec(), addr));
 ///
 ///     server_mgr.server_listening_loop().unwrap();
 /// });
@@ -83,8 +93,8 @@ impl Config {
 ///
 /// let mut client_list = TdList::new_client();
 ///
-/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec()));
-/// client_mgr.client_sync(IpAddr::V4(Ipv4Addr::LOCALHOST)).unwrap();
+/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec(), addr));
+/// client_mgr.client_sync().unwrap();
 ///
 /// let client_list = client_mgr.td_list();
 /// assert!(client_list.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
@@ -111,13 +121,12 @@ impl MtdNetMgr {
     /// # Panics
     ///
     /// If the `TdList` is a server list.
-    pub fn client_sync(&mut self, addr: IpAddr) -> Result<(), Error> {
+    pub fn client_sync(&mut self) -> Result<(), Error> {
         if self.td_list.server {
             panic!("Cannot start a client sync with a server TdList");
         }
 
-        let addr = SocketAddr::new(addr, self.config.port());
-        let mut stream = TcpStream::connect(addr)?;
+        let mut stream = TcpStream::connect(self.config.socket_addr())?;
 
         stream.set_read_timeout(Some(self.config.timeout()))?;
         stream.set_write_timeout(Some(self.config.timeout()))?;
@@ -178,10 +187,7 @@ impl MtdNetMgr {
             panic!("Cannot start a server loop with a client TdList");
         }
 
-        let tcp = TcpListener::bind(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            self.config.port(),
-        ))?;
+        let tcp = TcpListener::bind(self.config.socket_addr())?;
 
         for stream in tcp.incoming() {
             match self.handle_stream(stream) {
@@ -277,7 +283,6 @@ impl MtdNetMgr {
 #[cfg(test)]
 mod network_tests {
     use std::{env, fs, thread};
-    use std::net::{IpAddr, Ipv4Addr};
     use std::path::Path;
     use std::time::Duration;
 
@@ -287,7 +292,7 @@ mod network_tests {
     #[test]
     #[should_panic]
     fn mtd_net_mgr_panics_if_server_listener_ran_with_client_td_list() {
-        let conf = Config::new(55996, Vec::new(), Duration::from_secs(30), None);
+        let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
         let _ = MtdNetMgr::new(TdList::new_client(), conf)
             .server_listening_loop();
     }
@@ -295,9 +300,9 @@ mod network_tests {
     #[test]
     #[should_panic]
     fn mtd_net_mgr_panics_if_client_sync_ran_with_server_td_list() {
-        let conf = Config::new(55996, Vec::new(), Duration::from_secs(30), None);
+        let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
         let _ = MtdNetMgr::new(TdList::new_server(), conf)
-            .client_sync(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+            .client_sync();
     }
 
     // This test tests more than one thing, but I believe it to be rather useful. Running more than
@@ -320,8 +325,8 @@ mod network_tests {
         let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
         let client_path = env::temp_dir().join(Path::new("mtd-client-write-test-file"));
 
-        let server_conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
-        let client_conf = Config::new(55997, b"hunter42".to_vec(), Duration::from_secs(30), Some(client_path.clone()));
+        let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
+        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(client_path.clone()));
 
         let mut server_mgr = MtdNetMgr::new(server, server_conf);
         let mut client_mgr = MtdNetMgr::new(client, client_conf);
@@ -332,7 +337,7 @@ mod network_tests {
 
         thread::sleep(Duration::from_millis(500));
 
-        client_mgr.client_sync(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))).unwrap();
+        client_mgr.client_sync().unwrap();
 
         let client = client_mgr.td_list();
 
