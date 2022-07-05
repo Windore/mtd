@@ -356,25 +356,44 @@ impl MtdApp {
     }
 
     fn print_date(&self, date: NaiveDate, show_todos: bool, show_tasks: bool) {
-        println!("{}", date.weekday());
+        // Print weekday in yellow
+        println!("\x1B[33m{}:\x1B[39m", date.weekday().to_string().to_uppercase());
         if show_todos {
-            println!("Todos:");
-            for todo in self.list.undone_todos_for_date(date) {
-                println!("\t{}", todo);
-            }
-            for todo in self.list.done_todos_for_date(date) {
-                // Strikethrough and dim done todos.
-                println!("\t\x1B[2m\x1B[9m{}\x1B[0m", todo);
+            let undone_todos = self.list.undone_todos_for_date(date);
+            let done_todos = self.list.done_todos_for_date(date);
+
+            // Print header as green
+            println!("\x1B[32mTodos:\x1B[39m");
+
+            if undone_todos.len() + done_todos.len() == 0 {
+                println!("\tNo todos for this day.");
+            } else {
+                for todo in undone_todos {
+                    println!("\t{}", todo);
+                }
+                for todo in done_todos {
+                    // Strikethrough and dim done todos.
+                    println!("\t\x1B[2m\x1B[9m{}\x1B[0m", todo);
+                }
             }
         }
         if show_tasks {
-            println!("Tasks:");
-            for task in self.list.undone_tasks_for_date(date) {
-                println!("\t{}", task);
-            }
-            for task in self.list.done_tasks_for_date(date) {
-                // Strikethrough and dim done tasks.
-                println!("\t\x1B[2m\x1B[9m{}\x1B[0m", task);
+            let undone_tasks = self.list.undone_tasks_for_date(date);
+            let done_tasks = self.list.done_tasks_for_date(date);
+
+            // Print header as green
+            println!("\x1B[32mTasks:\x1B[39m");
+
+            if undone_tasks.len() + done_tasks.len() == 0 {
+                println!("\tNo tasks for this day.");
+            } else {
+                for task in undone_tasks {
+                    println!("\t{}", task);
+                }
+                for task in done_tasks {
+                    // Strikethrough and dim done tasks.
+                    println!("\t\x1B[2m\x1B[9m{}\x1B[0m", task);
+                }
             }
         }
     }
