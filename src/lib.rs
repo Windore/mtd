@@ -102,10 +102,10 @@ impl Display for Error {
                 write!(f, "{}", e)
             }
             Error::AuthFailed => {
-                write!(f, "Authentication failed.")
+                write!(f, "Remote authentication failed.")
             }
             Error::Other => {
-                write!(f, "Writing data to server failed.")
+                write!(f, "Other error. (this probably shouldn't happen)")
             }
         }
     }

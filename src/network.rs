@@ -57,8 +57,11 @@ impl Config {
         self.timeout
     }
     /// Returns the `Config`'s save location.
-    pub fn save_location(&self) -> &Option<PathBuf> {
-        &self.save_location
+    pub fn save_location(&self) -> Option<&PathBuf> {
+        match &self.save_location {
+            None => { None }
+            Some(p) => { Some(&p) }
+        }
     }
 }
 
