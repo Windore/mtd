@@ -91,7 +91,7 @@ enum Commands {
     Server,
     /// Re-initializes mtd
     /// (WARNING! This will completely delete all saved items!)
-    ReInit
+    ReInit,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum)]
@@ -543,5 +543,152 @@ impl MtdApp {
         self.list = MtdApp::create_new_list()?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+    use std::time::Duration;
+
+    use chrono::{Datelike, Local};
+
+    use mtd::{Config, Task, TdList, Todo};
+
+    use crate::{ItemType, MtdApp, Weekday};
+
+    fn create_client_app() -> MtdApp {
+        MtdApp {
+            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".parse().unwrap(), None),
+            list: TdList::new_client(),
+        }
+    }
+
+    fn create_server_app() -> MtdApp {
+        MtdApp {
+            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".parse().unwrap(), None),
+            list: TdList::new_server(),
+        }
+    }
+
+    #[test]
+    fn add_adds_todo_successfully() {
+        let mut client = create_client_app();
+        client.add(ItemType::Todo, &vec![Weekday::Wed], &"Todo".to_string());
+        assert_eq!(client.list.todos()[0], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Wed));
+    }
+
+    #[test]
+    fn add_adds_task_successfully() {
+        let mut client = create_client_app();
+        client.add(ItemType::Task, &vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], &"Task".to_string());
+        assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![chrono::Weekday::Wed, chrono::Weekday::Fri, chrono::Weekday::Sun]))
+    }
+
+    #[test]
+    fn add_adds_task_without_explicit_weekday() {
+        let mut client = create_client_app();
+        client.add(ItemType::Task, &vec![], &"Task".to_string());
+        assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![Local::today().weekday()]))
+    }
+
+    #[test]
+    fn add_adds_todo_to_multiple_weekdays() {
+        let mut client = create_client_app();
+        client.add(ItemType::Todo, &vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], &"Todo".to_string());
+        assert_eq!(client.list.todos()[0], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Wed));
+        assert_eq!(client.list.todos()[1], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Fri));
+        assert_eq!(client.list.todos()[2], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
+    }
+
+    #[test]
+    fn remove_removes_todo_successfully() {
+        let mut client = create_client_app();
+        client.list.add_todo(Todo::new_undated("Todo".to_string()));
+        client.remove(ItemType::Todo, 0).unwrap();
+        assert_eq!(client.list.todos().len(), 0);
+    }
+
+    #[test]
+    fn remove_removes_task_successfully() {
+        let mut client = create_client_app();
+        client.list.add_task(Task::new("Task".to_string(), vec![chrono::Weekday::Sun]));
+        client.remove(ItemType::Task, 0).unwrap();
+        assert_eq!(client.list.tasks().len(), 0);
+    }
+
+    #[test]
+    fn modify_done_state_sets_todo_done() {
+        let mut client = create_client_app();
+        client.list.add_todo(Todo::new_undated("Todo".to_string()));
+        client.modify_done_state(ItemType::Todo, 0, true).unwrap();
+        assert!(client.list.todos()[0].done());
+    }
+
+    #[test]
+    fn modify_done_state_sets_task_done_for_the_next_correct_date() {
+        let mut client = create_client_app();
+        client.list.add_task(Task::new("Task".to_string(), vec![Local::today().weekday().succ().succ()]));
+        client.modify_done_state(ItemType::Task, 0, true).unwrap();
+        assert!(client.list.tasks()[0].done(Local::today().naive_local().succ().succ()));
+    }
+
+    #[test]
+    fn set_sets_todo_values_to_new() {
+        let mut client = create_client_app();
+        client.list.add_todo(Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
+        client.set(ItemType::Todo, 0, &Some("New Todo".to_string()), &vec![Weekday::Wed]).unwrap();
+        assert_eq!(client.list.todos()[0], &Todo::new_dated("New Todo".to_string(), chrono::Weekday::Wed));
+    }
+
+    #[test]
+    fn set_sets_task_values_to_new() {
+        let mut client = create_client_app();
+        client.list.add_task(Task::new("Task".to_string(), vec![chrono::Weekday::Sun]));
+        client.set(ItemType::Task, 0, &Some("New Task".to_string()), &vec![Weekday::Thu, Weekday::Fri]).unwrap();
+        assert_eq!(client.list.tasks()[0], &Task::new("New Task".to_string(), vec![chrono::Weekday::Thu, chrono::Weekday::Fri]))
+    }
+
+    #[test]
+    fn set_doesnt_modify_weekday_without_explicit_set() {
+        let mut client = create_client_app();
+        client.list.add_todo(Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
+        client.set(ItemType::Todo, 0, &Some("New Todo".to_string()), &vec![]).unwrap();
+        assert_eq!(client.list.todos()[0], &Todo::new_dated("New Todo".to_string(), chrono::Weekday::Sun));
+    }
+
+    #[test]
+    fn set_doesnt_modify_body_without_explicit_set() {
+        let mut client = create_client_app();
+        client.list.add_task(Task::new("Task".to_string(), vec![chrono::Weekday::Sun]));
+        client.set(ItemType::Task, 0, &None, &vec![Weekday::Thu, Weekday::Fri]).unwrap();
+        assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![chrono::Weekday::Thu, chrono::Weekday::Fri]))
+    }
+
+    #[test]
+    fn sync_as_server_fails() {
+        assert!(create_server_app().sync().is_err());
+    }
+
+    #[test]
+    fn server_as_client_fails() {
+        assert!(create_client_app().server().is_err());
+    }
+
+    #[test]
+    fn syncing_works() {
+        thread::spawn(|| {
+            let mut server = create_server_app();
+            server.list.add_todo(Todo::new_undated("Todo".to_string()));
+            server.server().unwrap();
+        });
+
+        // Give server time to init
+        thread::sleep(Duration::from_millis(500));
+
+        let client = create_client_app().sync().unwrap();
+
+        assert_eq!(client.list.todos().len(), 1);
+        assert!(client.list.todos().contains(&&Todo::new_undated("Todo".to_string())));
     }
 }
