@@ -11,6 +11,8 @@ use mtd::{Config, Error, MtdNetMgr, Result, Task, TdList, Todo};
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
+    #[clap(value_parser, long)]
+    config_file: Option<PathBuf>,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -140,8 +142,8 @@ struct MtdApp {
 
 impl MtdApp {
     /// Initializes a new MtdApp. Reads/creates config and saved items.
-    fn new() -> Result<Self> {
-        let config_path = MtdApp::config_path()?;
+    fn new(conf_path: Option<PathBuf>) -> Result<Self> {
+        let config_path = conf_path.unwrap_or(MtdApp::default_config_path()?);
         let conf;
 
         if config_path.exists() {
@@ -204,7 +206,7 @@ impl MtdApp {
     }
 
     /// Returns the path to the config.
-    fn config_path() -> Result<PathBuf> {
+    fn default_config_path() -> Result<PathBuf> {
         Ok(dirs::config_dir().ok_or(Error::Unknown)?.join("mtd/conf.json"))
     }
 
@@ -217,7 +219,7 @@ impl MtdApp {
     fn create_new_config() -> Result<Config> {
         println!("Creating a new config.");
 
-        let config_path = MtdApp::config_path()?;
+        let config_path = MtdApp::default_config_path()?;
 
         let stdin = io::stdin();
         let mut stdout = io::stdout();
@@ -283,7 +285,7 @@ impl MtdApp {
     /// Runs the mtd cli app.
     fn run() -> Result<()> {
         let cli = CliArgs::parse();
-        let mut app = MtdApp::new()?;
+        let mut app = MtdApp::new(cli.config_file)?;
 
         match &cli.command {
             Commands::Show { item_type, weekday, week } => {

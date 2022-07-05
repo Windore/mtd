@@ -128,7 +128,6 @@ impl<'a> MtdNetMgr<'a> {
     ///
     /// If the `TdList` is a server list.
     pub fn client_sync(&mut self) -> Result<()> {
-        // TODO: Replace with error
         if self.td_list.server {
             panic!("Cannot start a client sync with a server TdList");
         }
@@ -187,7 +186,6 @@ impl<'a> MtdNetMgr<'a> {
     ///
     /// If the `TdList` is a client list.
     pub fn server_listening_loop(&mut self) -> io::Result<()> {
-        // TODO: Replace with error
         if !self.td_list.server {
             panic!("Cannot start a server loop with a client TdList");
         }
