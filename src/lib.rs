@@ -43,7 +43,6 @@
 use std::{io, result};
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::error::Error as StdErr;
 use std::fmt::{Debug, Display, Formatter};
 
 use chrono::{Datelike, Local, NaiveDate, Weekday};
@@ -77,6 +76,10 @@ pub enum Error {
     SerdeErr(serde_json::Error),
     /// Authentication of the client/server failed.
     AuthFailed,
+    /// Trying to do a server only operation as a client.
+    ServerOnlyOperation,
+    /// Trying to do a client only operation as a server.
+    ClientOnlyOperation,
     /// Unspecified error for rare edge cases that most of the time are handled internally.
     Unknown,
 }
@@ -108,6 +111,12 @@ impl Display for Error {
             Error::Unknown => {
                 write!(f, "Unknown error.")
             }
+            Error::ServerOnlyOperation => {
+                write!(f, "Operation not permitted for clients.")
+            }
+            Error::ClientOnlyOperation => {
+                write!(f, "Operation not permitted for clients.")
+            }
         }
     }
 }
@@ -128,7 +137,11 @@ impl std::error::Error for Error {}
 
 /// Gets the date that represents the upcoming weekday. Given tomorrow’s weekday, this should return
 /// tomorrows date. Today is represented by the current weekday.
-fn weekday_to_date(weekday: Weekday, mut today: NaiveDate) -> NaiveDate {
+pub fn weekday_to_date(weekday: Weekday) -> NaiveDate {
+    weekday_to_date_wtd(weekday, Local::today().naive_local())
+}
+
+fn weekday_to_date_wtd(weekday: Weekday, mut today: NaiveDate) -> NaiveDate {
     loop {
         if today.weekday() == weekday {
             return today;
@@ -167,7 +180,7 @@ impl Todo {
     pub fn new_dated(body: String, weekday: Weekday) -> Todo {
         Todo {
             body,
-            date: weekday_to_date(weekday, Local::today().naive_local()),
+            date: weekday_to_date_wtd(weekday, Local::today().naive_local()),
             id: 0,
             done: None,
             sync_id: random(),
@@ -210,7 +223,11 @@ impl Todo {
     }
 
     fn for_date_wtd(&self, date: NaiveDate, today: NaiveDate) -> bool {
-        date >= self.date && (date == today || self.date > today)
+        if self.date < date {
+            date == today
+        } else {
+            date.weekday() == self.date.weekday()
+        }
     }
 
     /// Gets the `body` of the `Todo`.
@@ -236,7 +253,7 @@ impl Todo {
 
     /// Sets the weekday of the `Todo`.
     pub fn set_weekday(&mut self, weekday: Weekday) {
-        self.date = weekday_to_date(weekday, Local::today().naive_local());
+        self.date = weekday_to_date_wtd(weekday, Local::today().naive_local());
         self.state = ItemState::Changed;
     }
 
@@ -714,6 +731,11 @@ impl TdList {
         self.tasks.items()
     }
 
+    /// Returns `true` if the `TdList` is a server.
+    pub fn is_server(&self) -> bool {
+        self.server
+    }
+
     /// Adds a `Todo` to the list and updates its id.
     pub fn add_todo(&mut self, mut todo: Todo) {
         todo.set_id(self.todos.items.len() as u64);
@@ -739,15 +761,15 @@ impl TdList {
     }
 
     /// Returns a mutable reference to a `Todo` by its `id`. If no `Todo` with the given `id` exists
-    /// return `None`.
-    pub fn get_todo_mut(&mut self, id: u64) -> Option<&mut Todo> {
-        self.todos.get_item_mut(id)
+    /// returns a `Error::NoTodoWithGivenId`.
+    pub fn get_todo_mut(&mut self, id: u64) -> Result<&mut Todo> {
+        self.todos.get_item_mut(id).ok_or(Error::NoTodoWithGivenId(id))
     }
 
     /// Returns a mutable reference to a `Task` by its `id`. If no `Task` with the given `id` exists
-    /// return `None`.
-    pub fn get_task_mut(&mut self, id: u64) -> Option<&mut Task> {
-        self.tasks.get_item_mut(id)
+    /// returns a `Error::NoTodoWithGivenId`.
+    pub fn get_task_mut(&mut self, id: u64) -> Result<&mut Task> {
+        self.tasks.get_item_mut(id).ok_or(Error::NoTaskWithGivenId(id))
     }
 
     /// Returns all `Todo`s for a given date that are not yet done.
@@ -899,7 +921,7 @@ impl TdList {
 mod tests {
     use chrono::{NaiveDate, Weekday};
 
-    use crate::{Task, TdList, Todo, weekday_to_date};
+    use crate::{Task, TdList, Todo, weekday_to_date_wtd};
 
     // Unit test a private function to remove the need to pass today into the Todo constructor
     #[test]
@@ -908,13 +930,13 @@ mod tests {
         let today = NaiveDate::from_ymd(2022, 6, 7);
 
         // Tue should return today’s date
-        assert_eq!(weekday_to_date(Weekday::Tue, today), today);
+        assert_eq!(weekday_to_date_wtd(Weekday::Tue, today), today);
 
         // Wed should return tomorrow’s date
-        assert_eq!(weekday_to_date(Weekday::Wed, today), today.succ());
+        assert_eq!(weekday_to_date_wtd(Weekday::Wed, today), today.succ());
 
         // Mon should return next weeks monday
-        assert_eq!(weekday_to_date(Weekday::Mon, today), NaiveDate::from_ymd(2022, 6, 13));
+        assert_eq!(weekday_to_date_wtd(Weekday::Mon, today), NaiveDate::from_ymd(2022, 6, 13));
     }
 
     #[test]
@@ -929,12 +951,11 @@ mod tests {
 
         let today = NaiveDate::from_ymd(2022, 6, 10);
 
-        // The following 5 asserts could each be their own unit test but I'm to lazy to do it so
+        // The following 4 asserts could each be their own unit test but I'm to lazy to do it so
         // instead I just added some comments explaining the tests
 
         assert!(todo.for_date_wtd(today, today)); // Todo is for the given date on the same day
         assert!(todo.for_date_wtd(today, today.pred())); // Todo is for the given date before the given date
-        assert!(!todo.for_date_wtd(today, today.succ())); // Todo is not for the given date after the given date
         assert!(todo.for_date_wtd(today.succ(), today.succ())); // Todo is for the following date one day after the given date
         assert!(!todo.for_date_wtd(today.succ(), today)); // Todo is not for the following date because it is already for today
     }

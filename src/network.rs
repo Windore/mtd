@@ -87,7 +87,8 @@ impl Config {
 ///     let mut server_list = TdList::new_server();
 ///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
 ///
-///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec(), addr, None));
+///     let conf = Config::new_default(password.to_vec(), addr, None);
+///     let mut server_mgr = MtdNetMgr::new(server_list, &conf);
 ///
 ///     server_mgr.server_listening_loop().unwrap();
 /// });
@@ -95,22 +96,23 @@ impl Config {
 /// // Give the server some time to bind to a port etc.
 /// thread::sleep(Duration::from_millis(500));
 ///
-/// let mut client_list = TdList::new_client();
+/// let mut client_list = TdList::new_client();///
 ///
-/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec(), addr, None));
+/// let conf = Config::new_default(password.to_vec(), addr, None);
+/// let mut client_mgr = MtdNetMgr::new(client_list, &conf);
 /// client_mgr.client_sync().unwrap();
 ///
 /// let client_list = client_mgr.td_list();
 /// assert!(client_list.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
 /// ```
-pub struct MtdNetMgr {
+pub struct MtdNetMgr<'a> {
     td_list: TdList,
-    config: Config,
+    config: &'a Config,
 }
 
-impl MtdNetMgr {
+impl<'a> MtdNetMgr<'a> {
     /// Creates a new `MtdNetMgr`.
-    pub fn new(td_list: TdList, config: Config) -> Self {
+    pub fn new(td_list: TdList, config: &'a Config) -> Self {
         Self { td_list, config }
     }
 
@@ -126,6 +128,7 @@ impl MtdNetMgr {
     ///
     /// If the `TdList` is a server list.
     pub fn client_sync(&mut self) -> Result<()> {
+        // TODO: Replace with error
         if self.td_list.server {
             panic!("Cannot start a client sync with a server TdList");
         }
@@ -184,6 +187,7 @@ impl MtdNetMgr {
     ///
     /// If the `TdList` is a client list.
     pub fn server_listening_loop(&mut self) -> io::Result<()> {
+        // TODO: Replace with error
         if !self.td_list.server {
             panic!("Cannot start a server loop with a client TdList");
         }
@@ -272,7 +276,7 @@ impl MtdNetMgr {
 
     /// Checks if a message contains a valid session id. Returns the message without the session id
     /// if the session id is correct. Otherwise returns an Err.
-    fn check_sid<'a>(correct_sid: &[u8; 8], msg_with_sid: &'a [u8]) -> Result<&'a [u8]> {
+    fn check_sid<'b>(correct_sid: &[u8; 8], msg_with_sid: &'b [u8]) -> Result<&'b [u8]> {
         if msg_with_sid.len() >= 8 && &msg_with_sid[..8] == correct_sid {
             Ok(&msg_with_sid[8..])
         } else {
@@ -294,7 +298,7 @@ mod network_tests {
     #[should_panic]
     fn mtd_net_mgr_panics_if_server_listener_ran_with_client_td_list() {
         let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
-        let _ = MtdNetMgr::new(TdList::new_client(), conf)
+        let _ = MtdNetMgr::new(TdList::new_client(), &conf)
             .server_listening_loop();
     }
 
@@ -302,7 +306,7 @@ mod network_tests {
     #[should_panic]
     fn mtd_net_mgr_panics_if_client_sync_ran_with_server_td_list() {
         let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
-        let _ = MtdNetMgr::new(TdList::new_server(), conf)
+        let _ = MtdNetMgr::new(TdList::new_server(), &conf)
             .client_sync();
     }
 
@@ -323,15 +327,13 @@ mod network_tests {
 
         client.add_todo(Todo::new_undated("Todo 3".to_string()));
 
-        let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
-
-        let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
         let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None);
-
-        let mut server_mgr = MtdNetMgr::new(server, server_conf);
-        let mut client_mgr = MtdNetMgr::new(client, client_conf);
+        let mut client_mgr = MtdNetMgr::new(client, &client_conf);
 
         thread::spawn(move || {
+            let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
+            let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
+            let mut server_mgr = MtdNetMgr::new(server, &server_conf);
             server_mgr.server_listening_loop().unwrap();
         });
 
@@ -346,6 +348,7 @@ mod network_tests {
         assert!(client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
         assert!(client.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
 
+        let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
         let server = TdList::new_from_json(&fs::read_to_string(server_path).unwrap()).unwrap();
 
         assert_eq!(server.todos().len(), 3);

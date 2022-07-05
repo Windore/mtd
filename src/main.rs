@@ -3,9 +3,10 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use chrono::{Datelike, Local, NaiveDate};
 use clap::{ArgEnum, Parser, Subcommand};
 
-use mtd::{Config, Error, Result, TdList};
+use mtd::{Config, Error, MtdNetMgr, Result, Task, TdList, Todo};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -46,6 +47,24 @@ enum Commands {
         #[clap(arg_enum, value_parser)]
         item_type: ItemType,
         /// Id of the item to remove
+        #[clap(value_parser)]
+        id: u64,
+    },
+    /// Sets an item as done
+    Do {
+        /// Type of item to set the value(s) of
+        #[clap(arg_enum, value_parser)]
+        item_type: ItemType,
+        /// Id of the item to set the value(s) of
+        #[clap(value_parser)]
+        id: u64,
+    },
+    /// Sets an item as undone
+    Undo {
+        /// Type of item to set the value(s) of
+        #[clap(arg_enum, value_parser)]
+        item_type: ItemType,
+        /// Id of the item to set the value(s) of
         #[clap(value_parser)]
         id: u64,
     },
@@ -268,22 +287,31 @@ impl MtdApp {
 
         match &cli.command {
             Commands::Show { item_type, weekday, week } => {
-                app.show(item_type, weekday, week);
+                app.show(*item_type, *weekday, *week);
             }
             Commands::Add { item_type, weekdays, body } => {
-                app.add(item_type, weekdays, body);
+                app.add(*item_type, weekdays, body);
             }
             Commands::Remove { item_type, id } => {
-                app.remove(item_type, id)?;
+                app.remove(*item_type, *id)?;
+            }
+            Commands::Do { item_type, id } => {
+                app.modify_done_state(*item_type, *id, true)?;
+            }
+            Commands::Undo { item_type, id } => {
+                app.modify_done_state(*item_type, *id, false)?;
             }
             Commands::Set { item_type, id, body, weekdays } => {
-                app.set(item_type, id, body, weekdays)?;
+                app.set(*item_type, *id, body, weekdays)?;
             }
             Commands::Sync {} => {
-                app.sync()?;
+                // Syncing requires taking ownership of the `TdList` which means that app needs to
+                // be reconstructed.
+                app = app.sync()?;
             }
             Commands::Server {} => {
-                app.server()?
+                // Same here
+                app = app.server()?
             }
             Commands::ReInit {} => {
                 app.re_init()?;
@@ -295,31 +323,193 @@ impl MtdApp {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                fs::write(path, app.list.to_json()?)?;
+            }
+            fs::write(path, app.list.to_json()?)?;
+        }
+
+        Ok(())
+    }
+
+    fn show(&self, item_type: Option<ItemType>, weekday_opt: Option<Weekday>, week: bool) {
+        // If item type is None, show everything.
+        let show_todos = item_type.is_none() || item_type.unwrap() == ItemType::Todo;
+        let show_tasks = item_type.is_none() || item_type.unwrap() == ItemType::Task;
+
+        if week {
+            // Iterate over the next 7-days.
+            let orig_wd = Local::today().weekday();
+            let mut day = Local::today().naive_local();
+
+            loop {
+                // Print each day.
+                self.print_date(day, show_todos, show_tasks);
+                println!();
+
+                day = day.succ();
+                if day.weekday() == orig_wd {
+                    break;
+                }
+            }
+        } else {
+            let weekday: chrono::Weekday;
+
+            // If cli arg weekday is unspecified show today's weekday.
+            if let Some(wd) = weekday_opt {
+                weekday = wd.into();
+            } else {
+                weekday = Local::today().weekday();
+            }
+
+            self.print_date(mtd::weekday_to_date(weekday), show_todos, show_tasks);
+        }
+    }
+
+    fn print_date(&self, date: NaiveDate, show_todos: bool, show_tasks: bool) {
+        println!("{}", date.weekday());
+        if show_todos {
+            println!("Todos:");
+            for todo in self.list.undone_todos_for_date(date) {
+                println!("\t{}", todo);
+            }
+            for todo in self.list.done_todos_for_date(date) {
+                // Strikethrough and dim done todos.
+                println!("\t\x1B[2m\x1B[9m{}\x1B[0m", todo);
+            }
+        }
+        if show_tasks {
+            println!("Tasks:");
+            for task in self.list.undone_tasks_for_date(date) {
+                println!("\t{}", task);
+            }
+            for task in self.list.done_tasks_for_date(date) {
+                // Strikethrough and dim done tasks.
+                println!("\t\x1B[2m\x1B[9m{}\x1B[0m", task);
+            }
+        }
+    }
+
+    fn add(&mut self, item_type: ItemType, weekdays: &Vec<Weekday>, body: &String) {
+        let mut chrono_weekdays: Vec<chrono::Weekday> = Vec::new();
+        for wd in weekdays {
+            chrono_weekdays.push(wd.clone().into());
+        }
+
+        // If no weekdays are specified, add today's weekday.
+        if chrono_weekdays.is_empty() {
+            chrono_weekdays.push(Local::today().weekday());
+        }
+
+        match item_type {
+            ItemType::Todo => {
+                for day in chrono_weekdays {
+                    self.list.add_todo(Todo::new_dated(body.clone(), day));
+                }
+            }
+            ItemType::Task => {
+                self.list.add_task(Task::new(body.clone(), chrono_weekdays));
+            }
+        }
+    }
+
+    fn remove(&mut self, item_type: ItemType, id: u64) -> Result<()> {
+        match item_type {
+            ItemType::Todo => {
+                self.list.remove_todo(id)?;
+            }
+            ItemType::Task => {
+                self.list.remove_task(id)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn modify_done_state(&mut self, item_type: ItemType, id: u64, to_done: bool) -> Result<()> {
+        match item_type {
+            ItemType::Todo => {
+                self.list.get_todo_mut(id)?.set_done(to_done);
+            }
+            ItemType::Task => {
+                let task = self.list.get_task_mut(id)?;
+                let mut next_date_for_task = Local::today().naive_local();
+                while !task.for_date(next_date_for_task) {
+                    next_date_for_task = next_date_for_task.succ();
+                }
+                task.set_done(to_done, next_date_for_task);
+            }
+        }
+        Ok(())
+    }
+
+    fn set(&mut self, item_type: ItemType, id: u64, body: &Option<String>, weekdays: &Vec<Weekday>) -> Result<()> {
+        let mut chrono_weekdays: Vec<chrono::Weekday> = Vec::new();
+        for wd in weekdays {
+            chrono_weekdays.push(wd.clone().into());
+        }
+
+        match item_type {
+            ItemType::Todo => {
+                let todo = self.list.get_todo_mut(id)?;
+                if let Some(b) = body {
+                    todo.set_body(b.clone());
+                }
+                if chrono_weekdays.len() >= 1 {
+                    todo.set_weekday(chrono_weekdays[0]);
+                }
+            }
+            ItemType::Task => {
+                let task = self.list.get_task_mut(id)?;
+                if let Some(b) = body {
+                    task.set_body(b.clone());
+                }
+                if chrono_weekdays.len() >= 1 {
+                    task.set_weekdays(chrono_weekdays);
+                }
             }
         }
 
         Ok(())
     }
 
-    fn show(&self, item_type: &Option<ItemType>, weekday: &Option<Weekday>, week: &bool) {}
+    fn sync(self) -> Result<Self> {
+        if self.list.is_server() {
+            Err(Error::ClientOnlyOperation)
+        } else {
+            let conf = self.conf;
 
-    fn add(&mut self, item_type: &ItemType, weekdays: &Vec<Weekday>, body: &String) {}
+            let mut net_mgr = MtdNetMgr::new(self.list, &conf);
 
-    fn remove(&mut self, item_type: &ItemType, id: &u64) -> Result<()> {
-        Ok(())
+            net_mgr.client_sync()?;
+
+            let list = net_mgr.td_list();
+
+            Ok(
+                Self {
+                    conf,
+                    list,
+                }
+            )
+        }
     }
 
-    fn set(&mut self, item_type: &ItemType, id: &u64, body: &Option<String>, weekdays: &Vec<Weekday>) -> Result<()> {
-        Ok(())
-    }
+    fn server(self) -> Result<Self> {
+        if !self.list.is_server() {
+            Err(Error::ServerOnlyOperation)
+        } else {
+            let conf = self.conf;
 
-    fn sync(&mut self) -> Result<()> {
-        Ok(())
-    }
+            let mut net_mgr = MtdNetMgr::new(self.list, &conf);
 
-    fn server(&mut self) -> Result<()> {
-        Ok(())
+            net_mgr.server_listening_loop()?;
+
+            let list = net_mgr.td_list();
+
+            Ok(
+                Self {
+                    conf,
+                    list,
+                }
+            )
+        }
     }
 
     fn re_init(&mut self) -> Result<()> {
