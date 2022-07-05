@@ -297,7 +297,7 @@ impl Todo {
 
 impl Display for Todo {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} (ID: {})", self.body, self.id)
+        write!(f, "{}. {}", self.id, self.body)
     }
 }
 
@@ -487,7 +487,7 @@ impl Task {
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} (ID: {})", self.body, self.id)
+        write!(f, "{}. {}", self.id, self.body)
     }
 }
 
@@ -940,12 +940,6 @@ mod tests {
     }
 
     #[test]
-    fn todo_displays_correctly() {
-        let todo = Todo::new_undated("Todo".to_string());
-        assert_eq!(todo.to_string(), "Todo (ID: 0)".to_string());
-    }
-
-    #[test]
     fn todo_for_date_tests() {
         let todo = Todo::new_specific_date("Friday".to_string(), NaiveDate::from_ymd(2022, 6, 10));
 
@@ -985,12 +979,6 @@ mod tests {
         assert!(task.weekdays().contains(&Weekday::Mon));
         assert!(task.weekdays().contains(&Weekday::Tue));
         assert!(!task.weekdays().contains(&Weekday::Wed));
-    }
-
-    #[test]
-    fn task_displays_correctly() {
-        let task = Task::new("Task".to_string(), vec![Weekday::Wed]);
-        assert_eq!(task.to_string(), "Task (ID: 0)".to_string());
     }
 
     #[test]
