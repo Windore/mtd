@@ -178,8 +178,6 @@ impl MtdApp {
 
     /// Creates a new TdList as a server or a client depending on user input.
     fn create_new_list() -> Result<TdList> {
-        println!("Initializing.");
-
         let mut buffer = String::new();
         let stdin = io::stdin();
         let mut stdout = io::stdout();
@@ -242,21 +240,12 @@ impl MtdApp {
 
         println!("Note! Encryption password is stored in cleartext but obfuscated locally.");
 
-        let mut encryption_passwd = String::new();
-        let mut encryption_passwd_again = String::new();
+        let mut encryption_passwd;
+        let mut encryption_passwd_again;
 
         loop {
-            print!("Input encryption password: ");
-            stdout.flush()?;
-            encryption_passwd.clear();
-            stdin.read_line(&mut encryption_passwd)?;
-            encryption_passwd = encryption_passwd.trim().to_string();
-
-            print!("Input encryption password again: ");
-            stdout.flush()?;
-            encryption_passwd_again.clear();
-            stdin.read_line(&mut encryption_passwd_again)?;
-            encryption_passwd_again = encryption_passwd_again.trim().to_string();
+            encryption_passwd = rpassword::prompt_password("Input encryption password: ")?;
+            encryption_passwd_again = rpassword::prompt_password("Input encryption password again: ")?;
 
             if encryption_passwd != encryption_passwd_again {
                 eprintln!("Passwords do not match.");
