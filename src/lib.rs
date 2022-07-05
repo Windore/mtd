@@ -43,6 +43,7 @@
 use std::{io, result};
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::error::Error as StdErr;
 use std::fmt::{Debug, Display, Formatter};
 
 use chrono::{Datelike, Local, NaiveDate, Weekday};
@@ -77,7 +78,7 @@ pub enum Error {
     /// Authentication of the client/server failed.
     AuthFailed,
     /// Unspecified error for rare edge cases that most of the time are handled internally.
-    Other,
+    Unknown,
 }
 
 impl Display for Error {
@@ -96,16 +97,16 @@ impl Display for Error {
                 write!(f, "Decrypting data failed.")
             }
             Error::IOErr(e) => {
-                write!(f, "{}", e)
+                write!(f, "IO failure: {}", e)
             }
             Error::SerdeErr(e) => {
-                write!(f, "{}", e)
+                write!(f, "Parsing data failed: {}", e)
             }
             Error::AuthFailed => {
                 write!(f, "Remote authentication failed.")
             }
-            Error::Other => {
-                write!(f, "Other error. (this probably shouldn't happen)")
+            Error::Unknown => {
+                write!(f, "Unknown error.")
             }
         }
     }
@@ -562,13 +563,13 @@ impl<T: SyncItem + Clone + PartialEq> SyncList<T> {
     }
     fn mark_removed(&mut self, id: u64) -> Result<()> {
         if id >= self.items.len() as u64 {
-            return Err(Error::Other);
+            return Err(Error::Unknown);
         }
         let item = self.items[id as usize].borrow_mut();
 
         // Do not allow the removal of items already removed.
         if item.state() == ItemState::Removed {
-            return Err(Error::Other);
+            return Err(Error::Unknown);
         }
 
         item.set_state(ItemState::Removed);

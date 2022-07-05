@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, Result, TdList};
 use crate::network::crypt::{decrypt, encrypt};
 
-/// A config specifying how a `MtdNetMgr` should function.
+/// A config specifying how a `MtdNetMgr` should function. Defining a `save_location` is optional.
+/// If it is `None` any `TdList` won't be saved.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     socket_addr: SocketAddr,
@@ -28,12 +29,12 @@ impl Config {
         Self { socket_addr, encryption_password, timeout, save_location }
     }
     /// Creates a new `Config` with default values.
-    pub fn new_default(encryption_password: Vec<u8>, socket_addr: SocketAddr) -> Self {
+    pub fn new_default(encryption_password: Vec<u8>, socket_addr: SocketAddr, save_location: Option<PathBuf>) -> Self {
         Self {
             socket_addr,
             encryption_password,
             timeout: Duration::from_secs(30),
-            save_location: None,
+            save_location,
         }
     }
     /// Creates a ´Config` from a JSON string.
@@ -42,7 +43,7 @@ impl Config {
     }
     /// Creates a JSON string from the `Config`.
     pub fn to_json(&self) -> Result<String> {
-        Ok(serde_json::to_string(self)?)
+        Ok(serde_json::to_string_pretty(self)?)
     }
     /// Returns the `Config`'s port.
     pub fn socket_addr(&self) -> SocketAddr {
@@ -86,7 +87,7 @@ impl Config {
 ///     let mut server_list = TdList::new_server();
 ///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
 ///
-///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec(), addr));
+///     let mut server_mgr = MtdNetMgr::new(server_list, Config::new_default(password.to_vec(), addr, None));
 ///
 ///     server_mgr.server_listening_loop().unwrap();
 /// });
@@ -96,7 +97,7 @@ impl Config {
 ///
 /// let mut client_list = TdList::new_client();
 ///
-/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec(), addr));
+/// let mut client_mgr = MtdNetMgr::new(client_list, Config::new_default(password.to_vec(), addr, None));
 /// client_mgr.client_sync().unwrap();
 ///
 /// let client_list = client_mgr.td_list();
@@ -169,12 +170,9 @@ impl MtdNetMgr {
         let msg = self.read_check_decrypted(&mut stream, &sid)?;
 
         if msg == b"ok" {
-            if let Some(path) = self.config.save_location() {
-                fs::write(path, self.td_list.to_json()?)?;
-            }
             Ok(())
         } else {
-            Err(Error::Other)
+            Err(Error::Unknown)
         }
     }
 
@@ -326,10 +324,9 @@ mod network_tests {
         client.add_todo(Todo::new_undated("Todo 3".to_string()));
 
         let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
-        let client_path = env::temp_dir().join(Path::new("mtd-client-write-test-file"));
 
         let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
-        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(client_path.clone()));
+        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None);
 
         let mut server_mgr = MtdNetMgr::new(server, server_conf);
         let mut client_mgr = MtdNetMgr::new(client, client_conf);
@@ -355,13 +352,6 @@ mod network_tests {
         assert!(server.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
         assert!(server.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
         assert!(server.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
-
-        let written_client = TdList::new_from_json(&fs::read_to_string(client_path).unwrap()).unwrap();
-
-        assert_eq!(written_client.todos().len(), 3);
-        assert!(written_client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));
-        assert!(written_client.todos().contains(&&Todo::new_undated("Todo 2".to_string())));
-        assert!(written_client.todos().contains(&&Todo::new_undated("Todo 3".to_string())));
     }
 }
 
