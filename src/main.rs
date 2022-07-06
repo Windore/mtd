@@ -142,7 +142,7 @@ struct MtdApp {
 
 impl MtdApp {
     /// Initializes a new MtdApp. Reads/creates config and saved items.
-    fn new(config_path: &PathBuf) -> Result<Self> {
+    fn init(config_path: &PathBuf) -> Result<Self> {
         let conf;
 
         if config_path.exists() {
@@ -279,16 +279,23 @@ impl MtdApp {
         if let Commands::ReInit = &cli.command {
             app = MtdApp::re_init(&config_path)?;
         } else {
-            app = MtdApp::new(&config_path)?;
+            app = MtdApp::init(&config_path)?.handle_command(cli.command)?;
         }
 
-        let _ = app.main(cli.command)?;
+        if let Some(path) = app.conf.save_location() {
+            if !path.exists() {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+            }
+            fs::write(path, app.list.to_json()?)?;
+        }
 
         Ok(())
     }
 
     // Needs to take ownership because syncing needs ownership
-    fn main(mut self, command: Commands) -> Result<Self> {
+    fn handle_command(mut self, command: Commands) -> Result<Self> {
         match command {
             Commands::Show { item_type, weekday, week } => {
                 self.show(item_type, weekday, week);
@@ -317,21 +324,12 @@ impl MtdApp {
                 // Same here
                 self = self.server()?
             }
-            // Re-init is done before.
+            // Re-init is handled earlier
             Commands::ReInit {} => {}
         }
 
         if self.conf.local_only() {
             self.list.self_sync();
-        }
-
-        if let Some(path) = self.conf.save_location() {
-            if !path.exists() {
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-            }
-            fs::write(path, self.list.to_json()?)?;
         }
 
         Ok(self)
@@ -554,7 +552,7 @@ impl MtdApp {
             println!("Abort!");
             // This is not optimal, but is the easiest way to implement this.
             process::exit(0);
-            // Other option would be to call, but that could seem like the abort didn't do anything
+            // Other option would be to call, but in some cases that could seem like the abort didn't do anything
             // return Ok(MtdApp::new(config_path)?);
         }
 
@@ -728,7 +726,7 @@ mod tests {
         // Do assert here to first check that the save format hasn't changed and will contain the todo in cleartext.
         assert!(app.list.to_json().unwrap().contains("This string doesn't remain if the todo is actually removed."));
 
-        let app = app.main(Commands::Remove { item_type: ItemType::Todo, id: 0 }).unwrap();
+        let app = app.handle_command(Commands::Remove { item_type: ItemType::Todo, id: 0 }).unwrap();
 
         assert!(!app.list.to_json().unwrap().contains("This string doesn't remain if the todo is actually removed."));
     }
