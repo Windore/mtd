@@ -272,51 +272,69 @@ impl MtdApp {
     fn run() -> Result<()> {
         let cli = CliArgs::parse();
         let config_path = cli.config_file.unwrap_or(MtdApp::default_config_path()?);
-        let mut app = MtdApp::new(&config_path)?;
 
-        match &cli.command {
+        let app;
+
+        // Re-init is checked here because it should run without reading previous values.
+        if let Commands::ReInit = &cli.command {
+            app = MtdApp::re_init(&config_path)?;
+        } else {
+            app = MtdApp::new(&config_path)?;
+        }
+
+        let _ = app.main(cli.command)?;
+
+        Ok(())
+    }
+
+    // Needs to take ownership because syncing needs ownership
+    fn main(mut self, command: Commands) -> Result<Self> {
+        match command {
             Commands::Show { item_type, weekday, week } => {
-                app.show(*item_type, *weekday, *week);
+                self.show(item_type, weekday, week);
             }
             Commands::Add { item_type, weekdays, body } => {
-                app.add(*item_type, weekdays, body);
+                self.add(item_type, weekdays, body);
             }
             Commands::Remove { item_type, id } => {
-                app.remove(*item_type, *id)?;
+                self.remove(item_type, id)?;
             }
             Commands::Do { item_type, id } => {
-                app.modify_done_state(*item_type, *id, true)?;
+                self.modify_done_state(item_type, id, true)?;
             }
             Commands::Undo { item_type, id } => {
-                app.modify_done_state(*item_type, *id, false)?;
+                self.modify_done_state(item_type, id, false)?;
             }
             Commands::Set { item_type, id, body, weekdays } => {
-                app.set(*item_type, *id, body, weekdays)?;
+                self.set(item_type, id, body, weekdays)?;
             }
             Commands::Sync {} => {
                 // Syncing requires taking ownership of the `TdList` which means that app needs to
                 // be reconstructed.
-                app = app.sync()?;
+                self = self.sync()?;
             }
             Commands::Server {} => {
                 // Same here
-                app = app.server()?
+                self = self.server()?
             }
-            Commands::ReInit {} => {
-                app.re_init(config_path)?;
-            }
+            // Re-init is done before.
+            Commands::ReInit {} => {}
         }
 
-        if let Some(path) = app.conf.save_location() {
+        if self.conf.local_only() {
+            self.list.self_sync();
+        }
+
+        if let Some(path) = self.conf.save_location() {
             if !path.exists() {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
                 }
             }
-            fs::write(path, app.list.to_json()?)?;
+            fs::write(path, self.list.to_json()?)?;
         }
 
-        Ok(())
+        Ok(self)
     }
 
     fn show(&self, item_type: Option<ItemType>, weekday_opt: Option<Weekday>, week: bool) {
@@ -396,10 +414,10 @@ impl MtdApp {
         }
     }
 
-    fn add(&mut self, item_type: ItemType, weekdays: &Vec<Weekday>, body: &String) {
+    fn add(&mut self, item_type: ItemType, weekdays: Vec<Weekday>, body: String) {
         let mut chrono_weekdays: Vec<chrono::Weekday> = Vec::new();
         for wd in weekdays {
-            chrono_weekdays.push(wd.clone().into());
+            chrono_weekdays.push(wd.into());
         }
 
         // If no weekdays are specified, add today's weekday.
@@ -414,7 +432,7 @@ impl MtdApp {
                 }
             }
             ItemType::Task => {
-                self.list.add_task(Task::new(body.clone(), chrono_weekdays));
+                self.list.add_task(Task::new(body, chrono_weekdays));
             }
         }
     }
@@ -448,17 +466,17 @@ impl MtdApp {
         Ok(())
     }
 
-    fn set(&mut self, item_type: ItemType, id: u64, body: &Option<String>, weekdays: &Vec<Weekday>) -> Result<()> {
+    fn set(&mut self, item_type: ItemType, id: u64, body: Option<String>, weekdays: Vec<Weekday>) -> Result<()> {
         let mut chrono_weekdays: Vec<chrono::Weekday> = Vec::new();
         for wd in weekdays {
-            chrono_weekdays.push(wd.clone().into());
+            chrono_weekdays.push(wd.into());
         }
 
         match item_type {
             ItemType::Todo => {
                 let todo = self.list.get_todo_mut(id)?;
                 if let Some(b) = body {
-                    todo.set_body(b.clone());
+                    todo.set_body(b);
                 }
                 if chrono_weekdays.len() >= 1 {
                     todo.set_weekday(chrono_weekdays[0]);
@@ -467,7 +485,7 @@ impl MtdApp {
             ItemType::Task => {
                 let task = self.list.get_task_mut(id)?;
                 if let Some(b) = body {
-                    task.set_body(b.clone());
+                    task.set_body(b);
                 }
                 if chrono_weekdays.len() >= 1 {
                     task.set_weekdays(chrono_weekdays);
@@ -479,48 +497,40 @@ impl MtdApp {
     }
 
     fn sync(self) -> Result<Self> {
-        if self.list.is_server() {
-            Err(Error::ClientOnlyOperation)
-        } else {
-            let conf = self.conf;
+        let conf = self.conf;
 
-            let mut net_mgr = MtdNetMgr::new(self.list, &conf);
+        let mut net_mgr = MtdNetMgr::new(self.list, &conf);
 
-            net_mgr.client_sync()?;
+        net_mgr.client_sync()?;
 
-            let list = net_mgr.td_list();
+        let list = net_mgr.td_list();
 
-            Ok(
-                Self {
-                    conf,
-                    list,
-                }
-            )
-        }
+        Ok(
+            Self {
+                conf,
+                list,
+            }
+        )
     }
 
     fn server(self) -> Result<Self> {
-        if !self.list.is_server() {
-            Err(Error::ServerOnlyOperation)
-        } else {
-            let conf = self.conf;
+        let conf = self.conf;
 
-            let mut net_mgr = MtdNetMgr::new(self.list, &conf);
+        let mut net_mgr = MtdNetMgr::new(self.list, &conf);
 
-            net_mgr.server_listening_loop()?;
+        net_mgr.server_listening_loop()?;
 
-            let list = net_mgr.td_list();
+        let list = net_mgr.td_list();
 
-            Ok(
-                Self {
-                    conf,
-                    list,
-                }
-            )
-        }
+        Ok(
+            Self {
+                conf,
+                list,
+            }
+        )
     }
 
-    fn re_init(&mut self, config_path: PathBuf) -> Result<()> {
+    fn re_init(config_path: &PathBuf) -> Result<Self> {
         let stdin = io::stdin();
         let mut stdout = io::stdout();
 
@@ -542,13 +552,16 @@ impl MtdApp {
 
         if &buffer == "n" {
             println!("Abort!");
-            return Ok(());
+            // This is not optimal, but is the easiest way to implement this.
+            process::exit(0);
+            // Other option would be to call, but that could seem like the abort didn't do anything
+            // return Ok(MtdApp::new(config_path)?);
         }
 
-        self.conf = MtdApp::create_new_config(&config_path)?;
-        self.list = MtdApp::create_new_list()?;
-
-        Ok(())
+        Ok(Self {
+            conf: MtdApp::create_new_config(&config_path)?,
+            list: MtdApp::create_new_list()?,
+        })
     }
 }
 
@@ -561,7 +574,7 @@ mod tests {
 
     use mtd::{Config, Task, TdList, Todo};
 
-    use crate::{ItemType, MtdApp, Weekday};
+    use crate::{Commands, ItemType, MtdApp, Weekday};
 
     fn create_client_app() -> MtdApp {
         MtdApp {
@@ -580,28 +593,28 @@ mod tests {
     #[test]
     fn add_adds_todo_successfully() {
         let mut client = create_client_app();
-        client.add(ItemType::Todo, &vec![Weekday::Wed], &"Todo".to_string());
+        client.add(ItemType::Todo, vec![Weekday::Wed], "Todo".to_string());
         assert_eq!(client.list.todos()[0], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Wed));
     }
 
     #[test]
     fn add_adds_task_successfully() {
         let mut client = create_client_app();
-        client.add(ItemType::Task, &vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], &"Task".to_string());
+        client.add(ItemType::Task, vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], "Task".to_string());
         assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![chrono::Weekday::Wed, chrono::Weekday::Fri, chrono::Weekday::Sun]))
     }
 
     #[test]
     fn add_adds_task_without_explicit_weekday() {
         let mut client = create_client_app();
-        client.add(ItemType::Task, &vec![], &"Task".to_string());
+        client.add(ItemType::Task, vec![], "Task".to_string());
         assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![Local::today().weekday()]))
     }
 
     #[test]
     fn add_adds_todo_to_multiple_weekdays() {
         let mut client = create_client_app();
-        client.add(ItemType::Todo, &vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], &"Todo".to_string());
+        client.add(ItemType::Todo, vec![Weekday::Wed, Weekday::Fri, Weekday::Sun], "Todo".to_string());
         assert_eq!(client.list.todos()[0], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Wed));
         assert_eq!(client.list.todos()[1], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Fri));
         assert_eq!(client.list.todos()[2], &Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
@@ -643,7 +656,7 @@ mod tests {
     fn set_sets_todo_values_to_new() {
         let mut client = create_client_app();
         client.list.add_todo(Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
-        client.set(ItemType::Todo, 0, &Some("New Todo".to_string()), &vec![Weekday::Wed]).unwrap();
+        client.set(ItemType::Todo, 0, Some("New Todo".to_string()), vec![Weekday::Wed]).unwrap();
         assert_eq!(client.list.todos()[0], &Todo::new_dated("New Todo".to_string(), chrono::Weekday::Wed));
     }
 
@@ -651,7 +664,7 @@ mod tests {
     fn set_sets_task_values_to_new() {
         let mut client = create_client_app();
         client.list.add_task(Task::new("Task".to_string(), vec![chrono::Weekday::Sun]));
-        client.set(ItemType::Task, 0, &Some("New Task".to_string()), &vec![Weekday::Thu, Weekday::Fri]).unwrap();
+        client.set(ItemType::Task, 0, Some("New Task".to_string()), vec![Weekday::Thu, Weekday::Fri]).unwrap();
         assert_eq!(client.list.tasks()[0], &Task::new("New Task".to_string(), vec![chrono::Weekday::Thu, chrono::Weekday::Fri]))
     }
 
@@ -659,7 +672,7 @@ mod tests {
     fn set_doesnt_modify_weekday_without_explicit_set() {
         let mut client = create_client_app();
         client.list.add_todo(Todo::new_dated("Todo".to_string(), chrono::Weekday::Sun));
-        client.set(ItemType::Todo, 0, &Some("New Todo".to_string()), &vec![]).unwrap();
+        client.set(ItemType::Todo, 0, Some("New Todo".to_string()), vec![]).unwrap();
         assert_eq!(client.list.todos()[0], &Todo::new_dated("New Todo".to_string(), chrono::Weekday::Sun));
     }
 
@@ -667,7 +680,7 @@ mod tests {
     fn set_doesnt_modify_body_without_explicit_set() {
         let mut client = create_client_app();
         client.list.add_task(Task::new("Task".to_string(), vec![chrono::Weekday::Sun]));
-        client.set(ItemType::Task, 0, &None, &vec![Weekday::Thu, Weekday::Fri]).unwrap();
+        client.set(ItemType::Task, 0, None, vec![Weekday::Thu, Weekday::Fri]).unwrap();
         assert_eq!(client.list.tasks()[0], &Task::new("Task".to_string(), vec![chrono::Weekday::Thu, chrono::Weekday::Fri]))
     }
 
@@ -696,5 +709,27 @@ mod tests {
 
         assert_eq!(client.list.todos().len(), 1);
         assert!(client.list.todos().contains(&&Todo::new_undated("Todo".to_string())));
+    }
+
+    #[test]
+    fn local_only_syncs_with_self_automatically() {
+        let mut app = MtdApp {
+            list: TdList::new_client(),
+            conf: Config::new(
+                "127.0.0.1:55995".parse().unwrap(),
+                "pw".as_bytes().to_vec(),
+                Duration::from_secs(30),
+                None,
+                true,
+            ),
+        };
+        app.list.add_todo(Todo::new_undated("This string doesn't remain if the todo is actually removed.".to_string()));
+
+        // Do assert here to first check that the save format hasn't changed and will contain the todo in cleartext.
+        assert!(app.list.to_json().unwrap().contains("This string doesn't remain if the todo is actually removed."));
+
+        let app = app.main(Commands::Remove { item_type: ItemType::Todo, id: 0 }).unwrap();
+
+        assert!(!app.list.to_json().unwrap().contains("This string doesn't remain if the todo is actually removed."));
     }
 }

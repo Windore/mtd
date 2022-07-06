@@ -21,12 +21,13 @@ pub struct Config {
     encryption_password: Vec<u8>,
     timeout: Duration,
     save_location: Option<PathBuf>,
+    local_only: bool,
 }
 
 impl Config {
     /// Creates a new `Config` with explicit values.
-    pub fn new(socket_addr: SocketAddr, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>) -> Self {
-        Self { socket_addr, encryption_password, timeout, save_location }
+    pub fn new(socket_addr: SocketAddr, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>, local_only: bool) -> Self {
+        Self { socket_addr, encryption_password, timeout, save_location, local_only }
     }
     /// Creates a new `Config` with default values.
     pub fn new_default(encryption_password: Vec<u8>, socket_addr: SocketAddr, save_location: Option<PathBuf>) -> Self {
@@ -35,6 +36,7 @@ impl Config {
             encryption_password,
             timeout: Duration::from_secs(30),
             save_location,
+            local_only: false,
         }
     }
     /// Creates a ´Config` from a JSON string.
@@ -63,6 +65,10 @@ impl Config {
             None => { None }
             Some(p) => { Some(&p) }
         }
+    }
+    /// Returns `true` if mtd should run only locally.
+    pub fn local_only(&self) -> bool {
+        self.local_only
     }
 }
 
@@ -111,6 +117,8 @@ pub struct MtdNetMgr<'a> {
 }
 
 impl<'a> MtdNetMgr<'a> {
+    // Taking ownership of TdList is the easy solution, because syncing as a server requires re-setting
+    // the value of td_list which isn't possible without ownership.
     /// Creates a new `MtdNetMgr`.
     pub fn new(td_list: TdList, config: &'a Config) -> Self {
         Self { td_list, config }
@@ -123,13 +131,12 @@ impl<'a> MtdNetMgr<'a> {
 
     /// Connects to a server and synchronizes the local `TdList` with a server. Writes the local
     /// `TdList` if the initialization `Config` defined a `save_location`.
-    ///
-    /// # Panics
-    ///
-    /// If the `TdList` is a server list.
     pub fn client_sync(&mut self) -> Result<()> {
+        if self.config.local_only {
+            return Err(Error::OnlineOnlyOperation);
+        }
         if self.td_list.server {
-            panic!("Cannot start a client sync with a server TdList");
+            return Err(Error::ClientOnlyOperation);
         }
 
         let mut stream = TcpStream::connect(self.config.socket_addr())?;
@@ -185,9 +192,12 @@ impl<'a> MtdNetMgr<'a> {
     /// # Panics
     ///
     /// If the `TdList` is a client list.
-    pub fn server_listening_loop(&mut self) -> io::Result<()> {
+    pub fn server_listening_loop(&mut self) -> Result<()> {
+        if self.config.local_only {
+            return Err(Error::OnlineOnlyOperation);
+        }
         if !self.td_list.server {
-            panic!("Cannot start a server loop with a client TdList");
+            return Err(Error::ServerOnlyOperation);
         }
 
         let tcp = TcpListener::bind(self.config.socket_addr())?;
@@ -289,23 +299,67 @@ mod network_tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use crate::{Config, TdList, Todo};
+    use crate::{Config, Error, TdList, Todo};
     use crate::network::MtdNetMgr;
 
     #[test]
-    #[should_panic]
-    fn mtd_net_mgr_panics_if_server_listener_ran_with_client_td_list() {
-        let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
-        let _ = MtdNetMgr::new(TdList::new_client(), &conf)
-            .server_listening_loop();
+    fn mtd_net_mgr_returns_err_if_server_listener_ran_with_client_td_list() {
+        let conf = Config::new(
+            "127.0.0.1:55996".parse().unwrap(),
+            Vec::new(),
+            Duration::from_secs(30),
+            None,
+            false,
+        );
+        match MtdNetMgr::new(TdList::new_client(), &conf).server_listening_loop().unwrap_err() {
+            Error::ServerOnlyOperation => assert!(true),
+            _ => assert!(false)
+        }
     }
 
     #[test]
-    #[should_panic]
-    fn mtd_net_mgr_panics_if_client_sync_ran_with_server_td_list() {
-        let conf = Config::new("127.0.0.1:55996".parse().unwrap(), Vec::new(), Duration::from_secs(30), None);
-        let _ = MtdNetMgr::new(TdList::new_server(), &conf)
-            .client_sync();
+    fn mtd_net_mgr_returns_err_if_client_sync_ran_with_server_td_list() {
+        let conf = Config::new(
+            "127.0.0.1:55996".parse().unwrap(),
+            Vec::new(),
+            Duration::from_secs(30),
+            None,
+            false,
+        );
+        match MtdNetMgr::new(TdList::new_server(), &conf).client_sync().unwrap_err() {
+            Error::ClientOnlyOperation => assert!(true),
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn mtd_net_mgr_returns_err_if_client_sync_ran_as_local_ins() {
+        let conf = Config::new(
+            "127.0.0.1:55996".parse().unwrap(),
+            Vec::new(),
+            Duration::from_secs(30),
+            None,
+            true,
+        );
+        match MtdNetMgr::new(TdList::new_client(), &conf).client_sync().unwrap_err() {
+            Error::OnlineOnlyOperation => assert!(true),
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn mtd_net_mgr_returns_err_if_server_listener_ran_as_local_ins() {
+        let conf = Config::new(
+            "127.0.0.1:55996".parse().unwrap(),
+            Vec::new(),
+            Duration::from_secs(30),
+            None,
+            true,
+        );
+        match MtdNetMgr::new(TdList::new_server(), &conf).server_listening_loop().unwrap_err() {
+            Error::OnlineOnlyOperation => assert!(true),
+            _ => assert!(false)
+        }
     }
 
     // This test tests more than one thing, but I believe it to be rather useful. Running more than
@@ -325,12 +379,12 @@ mod network_tests {
 
         client.add_todo(Todo::new_undated("Todo 3".to_string()));
 
-        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None);
+        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None, false);
         let mut client_mgr = MtdNetMgr::new(client, &client_conf);
 
         thread::spawn(move || {
             let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
-            let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()));
+            let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()), false);
             let mut server_mgr = MtdNetMgr::new(server, &server_conf);
             server_mgr.server_listening_loop().unwrap();
         });

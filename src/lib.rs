@@ -80,6 +80,8 @@ pub enum Error {
     ServerOnlyOperation,
     /// Trying to do a client only operation as a server.
     ClientOnlyOperation,
+    /// Operation not supported for local-only instances.
+    OnlineOnlyOperation,
     /// Unspecified error for rare edge cases that most of the time are handled internally.
     Unknown,
 }
@@ -116,6 +118,9 @@ impl Display for Error {
             }
             Error::ClientOnlyOperation => {
                 write!(f, "Operation not permitted for clients.")
+            }
+            Error::OnlineOnlyOperation => {
+                write!(f, "Operation not permitted for local-only instances.")
             }
         }
     }
