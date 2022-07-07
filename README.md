@@ -1,4 +1,4 @@
-# mtd - My Todo
+# Mtd - My Todo
 
 Lightweight todo and task management app with built-in synchronization.
 
@@ -56,7 +56,7 @@ Linux: `~/.config/mtd/conf.json`). Change `local_only` to `true`. Change `local_
 
 Example (this also shows the format in which the encryption password is stored. Use a longer password!):
 
-```
+```json
 {
   "socket_addr": "127.0.0.1:1",
   "encryption_password": [
