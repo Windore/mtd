@@ -142,14 +142,13 @@ struct MtdApp {
 
 impl MtdApp {
     /// Initializes a new MtdApp. Reads/creates config and saved items.
-    fn new(conf_path: Option<PathBuf>) -> Result<Self> {
-        let config_path = conf_path.unwrap_or(MtdApp::default_config_path()?);
+    fn new(config_path: &PathBuf) -> Result<Self> {
         let conf;
 
         if config_path.exists() {
             conf = Config::new_from_json(&fs::read_to_string(config_path)?)?;
         } else {
-            conf = MtdApp::create_new_config()?;
+            conf = MtdApp::create_new_config(config_path)?;
         }
 
         let list;
@@ -214,10 +213,8 @@ impl MtdApp {
     }
 
     /// Initializes a new config and writes it to a file.
-    fn create_new_config() -> Result<Config> {
+    fn create_new_config(config_path: &PathBuf) -> Result<Config> {
         println!("Creating a new config.");
-
-        let config_path = MtdApp::default_config_path()?;
 
         let stdin = io::stdin();
         let mut stdout = io::stdout();
@@ -274,7 +271,8 @@ impl MtdApp {
     /// Runs the mtd cli app.
     fn run() -> Result<()> {
         let cli = CliArgs::parse();
-        let mut app = MtdApp::new(cli.config_file)?;
+        let config_path = cli.config_file.unwrap_or(MtdApp::default_config_path()?);
+        let mut app = MtdApp::new(&config_path)?;
 
         match &cli.command {
             Commands::Show { item_type, weekday, week } => {
@@ -305,7 +303,7 @@ impl MtdApp {
                 app = app.server()?
             }
             Commands::ReInit {} => {
-                app.re_init()?;
+                app.re_init(config_path)?;
             }
         }
 
@@ -522,7 +520,7 @@ impl MtdApp {
         }
     }
 
-    fn re_init(&mut self) -> Result<()> {
+    fn re_init(&mut self, config_path: PathBuf) -> Result<()> {
         let stdin = io::stdin();
         let mut stdout = io::stdout();
 
@@ -547,7 +545,7 @@ impl MtdApp {
             return Ok(());
         }
 
-        self.conf = MtdApp::create_new_config()?;
+        self.conf = MtdApp::create_new_config(&config_path)?;
         self.list = MtdApp::create_new_list()?;
 
         Ok(())
