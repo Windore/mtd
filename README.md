@@ -7,18 +7,32 @@ Lightweight todo and task management app with built-in encrypted synchronization
 https://user-images.githubusercontent.com/65563192/178841983-8f8c5aec-7b46-42bd-9484-fbf4aa73ec5d.mp4
 
 Mtd is a yet another todo app as enough of those don't exist yet. However, mtd has some benefits over the existing apps,
-mtd has build-in synchronization, it's lightweight and has a clean CLI. I am also planning on writing an Android app for
-mtd.
+mtd has built-in synchronization, it's lightweight and has a clean CLI. I am also planning on writing an Android app for
+mtd. As for security, all network transmissions for synchronization are encrypted using AES GCM.
 
-Mtd's synchronization works by having a single machine function as a server. Other devices then connect to that server.
-Having an external server machine is helpful, but not necessary, as a mtd server can be run on a desktop machine
-alongside the normal client instance. The server is packed into the same binary so installing anything extra is not
-required.
+<details>
+  <summary>Mtd's synchronization follows a star topology</summary>
+  
+  Mtd's synchronization works by having a single machine function as a server. Other devices then connect to that server.
+  Having an external server machine is helpful, but not necessary, as a mtd server can be run on a desktop machine
+  alongside the normal client instance. The server is packed into the same binary so installing anything extra is not
+  required.
+  
+</details>
 
-Mtd has two types of items: todos and tasks. Both items show have an id that can be used for marking them as done and
-modifying them. Todos are things that you expect to do once. As not all todos should be done immediately, it is possible
-to specify a weekday for doing a todo. Done todos are automatically removed one day after completion. Tasks are things
-that you expect to do weekly. When creating a new task, you should specify the weekdays for doing the task.
+<details>
+  <summary>Mtd supports one-time todos and repeating tasks.</summary>
+  
+  Both items have an id that can be used for marking them as done and modifying them. 
+  
+  Todos are things that you expect to do once. As not all todos should be done immediately, it is possible to specify
+  a weekday for doing a todo. Done todos are automatically removed one day after completion. 
+  
+  Tasks are things that you expect to do weekly. When creating a new task, you should specify the weekdays for doing the task.
+  
+</details>
+
+
 
 **Note, mtd is not a calendar.** It only supports todos and tasks both of which are dated using only weekdays.
 
@@ -64,14 +78,9 @@ accomplished with the `--config-file` option and a different save path.
 
 ```
 > mtd --config-file server/only/config/file server
-Creating a new config.
-Create a local only instance (y/n)? n
-Input server socket address (IP:PORT): 127.0.0.1:55995
-Note! Encryption password is stored in cleartext but obfuscated locally.
-Input encryption password:
-Input encryption password again:
+...
 Input save path (Leave empty for default): server/only/data/file
-Initialize as a server or a client (s/c)? s
+...
 ```
 
 ### Examples
