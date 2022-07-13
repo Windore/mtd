@@ -1,5 +1,7 @@
 # Mtd - My Todo
 
+![example workflow](https://github.com/Windore/mtd/actions/workflows/rust.yml/badge.svg)
+
 Lightweight todo and task management app with built-in encrypted synchronization support, written in Rust.
 
 <!-- TODO: Add example gif/image -->
