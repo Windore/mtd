@@ -4,7 +4,7 @@
 
 Lightweight todo and task management app with built-in encrypted synchronization support, written in Rust.
 
-<!-- TODO: Add example gif/image -->
+https://user-images.githubusercontent.com/65563192/178841983-8f8c5aec-7b46-42bd-9484-fbf4aa73ec5d.mp4
 
 Mtd is a yet another todo app as enough of those don't exist yet. However, mtd has some benefits over the existing apps,
 mtd has build-in synchronization, it's lightweight and has a clean CLI. I am also planning on writing an Android app for
