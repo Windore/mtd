@@ -133,7 +133,7 @@ impl Display for Error {
                 write!(f, "Operation not permitted for clients.")
             }
             Error::ClientOnlyOperation => {
-                write!(f, "Operation not permitted for clients.")
+                write!(f, "Operation not permitted for servers.")
             }
             Error::OnlineOnlyOperation => {
                 write!(f, "Operation not permitted for local-only instances.")
