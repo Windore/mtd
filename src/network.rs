@@ -110,7 +110,7 @@ impl Config {
 ///     server_list.add_todo(Todo::new_undated("Todo 1".to_string()));
 ///
 ///     let conf = Config::new_default(password.to_vec(), addr, None);
-///     let mut server_mgr = MtdNetMgr::new(server_list, &conf);
+///     let mut server_mgr = MtdNetMgr::new(&mut server_list, &conf);
 ///
 ///     server_mgr.server_listening_loop().unwrap();
 /// });
@@ -121,14 +121,13 @@ impl Config {
 /// let mut client_list = TdList::new_client();///
 ///
 /// let conf = Config::new_default(password.to_vec(), addr, None);
-/// let mut client_mgr = MtdNetMgr::new(client_list, &conf);
+/// let mut client_mgr = MtdNetMgr::new(&mut client_list, &conf);
 /// client_mgr.client_sync().unwrap();
 ///
-/// let client_list = client_mgr.td_list();
 /// assert!(client_list.todos().contains(&&Todo::new_undated("Todo 1".to_string())));
 /// ```
 pub struct MtdNetMgr<'a> {
-    td_list: TdList,
+    td_list: &'a mut TdList,
     config: &'a Config,
 }
 
@@ -136,13 +135,8 @@ impl<'a> MtdNetMgr<'a> {
     // Taking ownership of TdList is the easy solution, because syncing as a server requires re-setting
     // the value of td_list which isn't easy without ownership.
     /// Creates a new `MtdNetMgr`.
-    pub fn new(td_list: TdList, config: &'a Config) -> Self {
+    pub fn new(td_list: &'a mut TdList, config: &'a Config) -> Self {
         Self { td_list, config }
-    }
-
-    /// Returns the contained `TdList`.
-    pub fn td_list(self) -> TdList {
-        self.td_list
     }
 
     /// Connects to a server and synchronizes the local `TdList` with a server. Writes the local
@@ -260,7 +254,10 @@ impl<'a> MtdNetMgr<'a> {
         // Client sends a response with a new synced TdList for the server.
         let msg = self.read_check_decrypted(&mut stream, &sid)?;
         let json_string = String::from_utf8_lossy(&msg).to_string();
-        self.td_list = TdList::new_from_json(&json_string)?;
+        let new_td_list = TdList::new_from_json(&json_string)?;
+
+        self.td_list.todos = new_td_list.todos;
+        self.td_list.tasks = new_td_list.tasks;
 
         if let Some(path) = self.config.save_location() {
             fs::write(path, &json_string)?;
@@ -327,7 +324,7 @@ mod network_tests {
             None,
             false,
         );
-        match MtdNetMgr::new(TdList::new_client(), &conf).server_listening_loop().unwrap_err() {
+        match MtdNetMgr::new(&mut TdList::new_client(), &conf).server_listening_loop().unwrap_err() {
             Error::ServerOnlyOperation => assert!(true),
             _ => assert!(false)
         }
@@ -342,7 +339,7 @@ mod network_tests {
             None,
             false,
         );
-        match MtdNetMgr::new(TdList::new_server(), &conf).client_sync().unwrap_err() {
+        match MtdNetMgr::new(&mut TdList::new_server(), &conf).client_sync().unwrap_err() {
             Error::ClientOnlyOperation => assert!(true),
             _ => assert!(false)
         }
@@ -357,7 +354,7 @@ mod network_tests {
             None,
             true,
         );
-        match MtdNetMgr::new(TdList::new_client(), &conf).client_sync().unwrap_err() {
+        match MtdNetMgr::new(&mut TdList::new_client(), &conf).client_sync().unwrap_err() {
             Error::OnlineOnlyOperation => assert!(true),
             _ => assert!(false)
         }
@@ -372,7 +369,7 @@ mod network_tests {
             None,
             true,
         );
-        match MtdNetMgr::new(TdList::new_server(), &conf).server_listening_loop().unwrap_err() {
+        match MtdNetMgr::new(&mut TdList::new_server(), &conf).server_listening_loop().unwrap_err() {
             Error::OnlineOnlyOperation => assert!(true),
             _ => assert!(false)
         }
@@ -396,20 +393,18 @@ mod network_tests {
         client.add_todo(Todo::new_undated("Todo 3".to_string()));
 
         let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None, false);
-        let mut client_mgr = MtdNetMgr::new(client, &client_conf);
+        let mut client_mgr = MtdNetMgr::new(&mut client, &client_conf);
 
         thread::spawn(move || {
             let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
             let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()), false);
-            let mut server_mgr = MtdNetMgr::new(server, &server_conf);
+            let mut server_mgr = MtdNetMgr::new(&mut server, &server_conf);
             server_mgr.server_listening_loop().unwrap();
         });
 
         thread::sleep(Duration::from_millis(500));
 
         client_mgr.client_sync().unwrap();
-
-        let client = client_mgr.td_list();
 
         assert_eq!(client.todos().len(), 3);
         assert!(client.todos().contains(&&Todo::new_undated("New Todo 1".to_string())));

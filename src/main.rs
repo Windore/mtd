@@ -392,13 +392,10 @@ impl MtdApp {
                 self.set(item_type, id, body, weekdays)?;
             }
             Commands::Sync {} => {
-                // Syncing requires taking ownership of the `TdList` which means that app needs to
-                // be reconstructed.
-                self = self.sync()?;
+                self.sync()?;
             }
             Commands::Server {} => {
-                // Same here
-                self = self.server()?
+                self.server()?;
             }
             // Re-init is handled earlier
             Commands::ReInit {} => {}
@@ -570,38 +567,20 @@ impl MtdApp {
         Ok(())
     }
 
-    fn sync(self) -> Result<Self> {
-        let conf = self.conf;
+    fn sync(&mut self) -> Result<()> {
+        let conf = &self.conf;
 
-        let mut net_mgr = MtdNetMgr::new(self.list, &conf);
+        let mut net_mgr = MtdNetMgr::new(&mut self.list, conf);
 
-        net_mgr.client_sync()?;
-
-        let list = net_mgr.td_list();
-
-        Ok(
-            Self {
-                conf,
-                list,
-            }
-        )
+        net_mgr.client_sync()
     }
 
-    fn server(self) -> Result<Self> {
-        let conf = self.conf;
+    fn server(&mut self) -> Result<()> {
+        let conf = &self.conf;
 
-        let mut net_mgr = MtdNetMgr::new(self.list, &conf);
+        let mut net_mgr = MtdNetMgr::new(&mut self.list, &conf);
 
-        net_mgr.server_listening_loop()?;
-
-        let list = net_mgr.td_list();
-
-        Ok(
-            Self {
-                conf,
-                list,
-            }
-        )
+        net_mgr.server_listening_loop()
     }
 
     fn re_init(config_path: &PathBuf) -> Result<Self> {
@@ -781,7 +760,8 @@ mod tests {
         // Give server time to init
         thread::sleep(Duration::from_millis(500));
 
-        let client = create_client_app().sync().unwrap();
+        let mut client = create_client_app();
+        client.sync().unwrap();
 
         assert_eq!(client.list.todos().len(), 1);
         assert!(client.list.todos().contains(&&Todo::new_undated("Todo".to_string())));
