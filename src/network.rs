@@ -134,7 +134,7 @@ pub struct MtdNetMgr<'a> {
 
 impl<'a> MtdNetMgr<'a> {
     // Taking ownership of TdList is the easy solution, because syncing as a server requires re-setting
-    // the value of td_list which isn't possible without ownership.
+    // the value of td_list which isn't easy without ownership.
     /// Creates a new `MtdNetMgr`.
     pub fn new(td_list: TdList, config: &'a Config) -> Self {
         Self { td_list, config }

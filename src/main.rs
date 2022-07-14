@@ -18,9 +18,12 @@ use std::{fs, io, process};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use chrono::{Datelike, Local, NaiveDate};
 use clap::{ArgEnum, Parser, Subcommand};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 
 use mtd::{Config, Error, MtdNetMgr, Result, Task, TdList, Todo};
 
@@ -179,10 +182,10 @@ impl MtdApp {
                     )?
                 )?;
             } else {
-                list = MtdApp::create_new_list()?;
+                list = MtdApp::create_new_list(&conf)?;
             }
         } else {
-            list = MtdApp::create_new_list()?;
+            list = MtdApp::create_new_list(&conf)?;
         }
 
         Ok(Self {
@@ -192,23 +195,27 @@ impl MtdApp {
     }
 
     /// Creates a new TdList as a server or a client depending on user input.
-    fn create_new_list() -> Result<TdList> {
+    fn create_new_list(config: &Config) -> Result<TdList> {
         let mut buffer = String::new();
         let stdin = io::stdin();
         let mut stdout = io::stdout();
 
-        loop {
-            print!("Initialize as a server or a client (s/c)? ");
-            stdout.flush()?;
-            buffer.clear();
-            stdin.read_line(&mut buffer)?;
-            buffer = buffer.to_lowercase().trim().to_string();
+        if config.local_only() {
+            buffer = "c".to_string();
+        } else {
+            loop {
+                print!("Initialize as a server or a client (s/c)? ");
+                stdout.flush()?;
+                buffer.clear();
+                stdin.read_line(&mut buffer)?;
+                buffer = buffer.to_lowercase().trim().to_string();
 
-            if &buffer != "s" && &buffer != "c" {
-                eprintln!("Invalid option.");
-                continue;
+                if &buffer != "s" && &buffer != "c" {
+                    eprintln!("Invalid option.");
+                    continue;
+                }
+                break;
             }
-            break;
         }
 
         if &buffer == "c" {
@@ -234,46 +241,99 @@ impl MtdApp {
 
         let stdin = io::stdin();
         let mut stdout = io::stdout();
+        let mut local_only_inp_buf = String::new();
 
+        loop {
+            print!("Create a local only instance (y/n)? ");
+            stdout.flush()?;
+            local_only_inp_buf.clear();
+            stdin.read_line(&mut local_only_inp_buf)?;
+            local_only_inp_buf = local_only_inp_buf.to_lowercase().trim().to_string();
+
+            if &local_only_inp_buf != "y" && &local_only_inp_buf != "n" {
+                eprintln!("Invalid option.");
+                continue;
+            }
+            break;
+        }
+
+        let local_only = &local_only_inp_buf == "y";
+        let mut encryption_passwd;
         let mut socket_addr = String::new();
 
+        if local_only {
+            socket_addr = "127.0.0.1:55995".parse().unwrap();
+            // Even though the random password wont be used in local only instances, I feel that
+            // it is better to create a random password rather than hardcode some value.
+            encryption_passwd = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(16)
+                .map(char::from)
+                .collect();
+        } else {
+            loop {
+                print!("Input server socket address (IP:PORT): ");
+                stdout.flush()?;
+                socket_addr.clear();
+                stdin.read_line(&mut socket_addr)?;
+                socket_addr = socket_addr.trim().to_string();
+
+                if socket_addr.parse::<SocketAddr>().is_err() {
+                    eprintln!("Cannot parse '{}' to socket address.", socket_addr);
+                    continue;
+                }
+                break;
+            }
+
+            println!("Note! Encryption password is stored in cleartext but obfuscated locally.");
+
+            let mut encryption_passwd_again;
+
+            loop {
+                encryption_passwd = rpassword::prompt_password("Input encryption password: ")?;
+                encryption_passwd_again = rpassword::prompt_password("Input encryption password again: ")?;
+
+                if encryption_passwd != encryption_passwd_again {
+                    eprintln!("Passwords do not match.");
+                    continue;
+                } else if encryption_passwd.is_empty() {
+                    eprintln!("Password cannot be empty.");
+                    continue;
+                }
+                break;
+            }
+        }
+
+        let mut save_location_buf = String::new();
+
         loop {
-            print!("Input server socket address (IP:PORT): ");
+            print!("Input save path (Leave empty for default): ");
             stdout.flush()?;
-            socket_addr.clear();
-            stdin.read_line(&mut socket_addr)?;
-            socket_addr = socket_addr.trim().to_string();
+            save_location_buf.clear();
+            stdin.read_line(&mut save_location_buf)?;
+            save_location_buf = save_location_buf.trim().to_string();
 
-            if socket_addr.parse::<SocketAddr>().is_err() {
-                eprintln!("Cannot parse '{}' to socket address.", socket_addr);
+            if save_location_buf.parse::<PathBuf>().is_err() && &save_location_buf != "" {
+                eprintln!("Cannot parse '{}' to path.", save_location_buf);
                 continue;
             }
             break;
         }
 
-        println!("Note! Encryption password is stored in cleartext but obfuscated locally.");
+        let save_path;
 
-        let mut encryption_passwd;
-        let mut encryption_passwd_again;
-
-        loop {
-            encryption_passwd = rpassword::prompt_password("Input encryption password: ")?;
-            encryption_passwd_again = rpassword::prompt_password("Input encryption password again: ")?;
-
-            if encryption_passwd != encryption_passwd_again {
-                eprintln!("Passwords do not match.");
-                continue;
-            } else if encryption_passwd.is_empty() {
-                eprintln!("Password cannot be empty.");
-                continue;
-            }
-            break;
+        if &save_location_buf == "" {
+            save_path = MtdApp::default_save_path()?;
+        } else {
+            save_path = save_location_buf.parse().unwrap();
         }
 
-        let conf = Config::new_default(
-            encryption_passwd.into_bytes(),
+        let conf = Config::new(
             socket_addr.parse().unwrap(),
-            Some(MtdApp::default_save_path()?),
+            encryption_passwd.into_bytes(),
+            Duration::from_secs(30),
+            Some(save_path),
+            local_only,
         );
 
         if let Some(conf_dir) = config_path.parent() {
@@ -572,9 +632,11 @@ impl MtdApp {
             // return Ok(MtdApp::new(config_path)?);
         }
 
+        let config = MtdApp::create_new_config(&config_path)?;
+
         Ok(Self {
-            conf: MtdApp::create_new_config(&config_path)?,
-            list: MtdApp::create_new_list()?,
+            list: MtdApp::create_new_list(&config)?,
+            conf: config,
         })
     }
 }
