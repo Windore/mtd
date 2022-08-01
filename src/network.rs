@@ -426,8 +426,8 @@ mod network_tests {
 /// using Argon2. For network communications, session ids should be used in addition to encrypting
 /// data.
 mod crypt {
-    use aes_gcm::{Aes256Gcm, Key, Nonce};
-    use aes_gcm::aead::{Aead, NewAead};
+    use aes_gcm::{Aes256Gcm, Nonce};
+    use aes_gcm::aead::{Aead, KeyInit};
     use argon2::Argon2;
     use rand::random;
 
@@ -440,9 +440,8 @@ mod crypt {
 
         let mut secret_passwd_hash: [u8; 32] = [0; 32];
         argon2.hash_password_into(passwd, &key_salt, &mut secret_passwd_hash).map_err(|_| Error::EncryptingFailed)?;
-        let encryption_key = Key::from_slice(&secret_passwd_hash);
 
-        let cipher = Aes256Gcm::new(encryption_key);
+        let cipher = Aes256Gcm::new_from_slice(&secret_passwd_hash).map_err(|_| Error::EncryptingFailed)?;
 
         // Random 96-bits for nonce.
         let nonce_bits: [u8; 12] = random();
@@ -466,9 +465,8 @@ mod crypt {
 
         let mut secret_passwd_hash: [u8; 32] = [0; 32];
         argon2.hash_password_into(passwd, key_salt, &mut secret_passwd_hash).map_err(|_| Error::DecryptingFailed)?;
-        let decryption_key = Key::from_slice(&secret_passwd_hash);
 
-        let cipher = Aes256Gcm::new(decryption_key);
+        let cipher = Aes256Gcm::new_from_slice(&secret_passwd_hash).map_err(|_| Error::DecryptingFailed)?;
 
         let nonce_bits = &ciphertext[16..28];
         let nonce = Nonce::from_slice(nonce_bits);
