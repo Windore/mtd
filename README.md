@@ -35,19 +35,19 @@ task.
 
 </details>
 
-
-
 **Note, mtd is not a calendar.** It only supports todos and tasks both of which are dated using only weekdays.
 
 ## Installation
 
-Currently, the only way to install mtd is manually using cargo.
+You can install mtd from source or downloading the [latest release binary](https://github.com/Windore/mtd/releases/latest).
+You shouldn't need to install any dependencies to use mtd. Only Linux binaries are provided. Mtd should work on other
+platforms as well, but other platforms are untested.
+
+Installation from source is done using cargo.
 
 ```
 cargo install --git https://github.com/Windore/mtd.git --features bin
 ```
-
-I am planning on publishing prebuilt binaries and an AUR package for mtd.
 
 ## Using mtd
 
