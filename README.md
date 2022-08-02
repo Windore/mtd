@@ -13,7 +13,7 @@ over the existing apps, mtd has built-in synchronization, it's lightweight and h
 for security, all network transmissions for synchronization are encrypted using AES GCM.
 
 <details>
-  <summary>Mtd's synchronization follows a star topology</summary>
+<summary>Mtd's synchronization follows a star topology</summary>
 
 Mtd's synchronization works by having a single machine function as a server. Other devices then connect to that server.
 Having an external server machine is helpful, but not necessary, as a mtd server can be run on a desktop machine
@@ -23,7 +23,7 @@ required.
 </details>
 
 <details>
-  <summary>Mtd supports one-time todos and repeating tasks.</summary>
+<summary>Mtd supports one-time todos and repeating tasks.</summary>
 
 Both items have an id that can be used for marking them as done and modifying them.
 
@@ -59,15 +59,13 @@ server.
 > mtd show
 Creating a new config.
 Create a local only instance (y/n)? n
-Input server socket address (IP:PORT): 127.0.0.1:55995
+Input server socket address (ADDRESS:PORT): localhost:55995
 Note! Encryption password is stored in cleartext but obfuscated locally.
 Input encryption password:
 Input encryption password again:
 Input save path (Leave empty for default):
 Initialize as a server or a client (s/c)? c
 ```
-
-When initializing a server, it is recommended to input 127.0.0.1 as the server's IP address.
 
 The encryption password should be the same on both the client(s) and the server. It is stored as an unencrypted
 byte-array locally. Encrypting it wouldn't provide basically any additional security since the saved

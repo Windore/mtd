@@ -16,7 +16,7 @@ see <https://www.gnu.org/licenses/>.
 
 use std::{fs, io, process};
 use std::io::Write;
-use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -262,7 +262,7 @@ impl MtdApp {
         let mut socket_addr = String::new();
 
         if local_only {
-            socket_addr = "127.0.0.1:55995".parse().unwrap();
+            socket_addr = "127.0.0.1:55995".to_string();
             // Even though the random password wont be used in local only instances, I feel that
             // it is better to create a random password rather than hardcode some value.
             encryption_passwd = rand::thread_rng()
@@ -272,13 +272,13 @@ impl MtdApp {
                 .collect();
         } else {
             loop {
-                print!("Input server socket address (IP:PORT): ");
+                print!("Input server socket address (ADDRESS:PORT): ");
                 stdout.flush()?;
                 socket_addr.clear();
                 stdin.read_line(&mut socket_addr)?;
                 socket_addr = socket_addr.trim().to_string();
 
-                if socket_addr.parse::<SocketAddr>().is_err() {
+                if socket_addr.to_socket_addrs().is_err() {
                     eprintln!("Cannot parse '{}' to socket address.", socket_addr);
                     continue;
                 }
@@ -633,14 +633,14 @@ mod tests {
 
     fn create_client_app() -> MtdApp {
         MtdApp {
-            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".parse().unwrap(), None),
+            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".to_string(), None),
             list: TdList::new_client(),
         }
     }
 
     fn create_server_app() -> MtdApp {
         MtdApp {
-            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".parse().unwrap(), None),
+            conf: Config::new_default("SecurePw".as_bytes().to_vec(), "127.0.0.1:55980".to_string(), None),
             list: TdList::new_server(),
         }
     }
@@ -772,7 +772,7 @@ mod tests {
         let mut app = MtdApp {
             list: TdList::new_client(),
             conf: Config::new(
-                "127.0.0.1:55995".parse().unwrap(),
+                "127.0.0.1:55995".to_string(),
                 "pw".as_bytes().to_vec(),
                 Duration::from_secs(30),
                 None,

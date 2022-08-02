@@ -19,7 +19,7 @@ see <https://www.gnu.org/licenses/>.
 
 use std::{fs, io};
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ use crate::network::crypt::{decrypt, encrypt};
 /// If it is `None` any `TdList` won't be saved.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    socket_addr: SocketAddr,
+    socket_addr: String,
     encryption_password: Vec<u8>,
     timeout: Duration,
     save_location: Option<PathBuf>,
@@ -42,11 +42,11 @@ pub struct Config {
 
 impl Config {
     /// Creates a new `Config` with explicit values.
-    pub fn new(socket_addr: SocketAddr, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>, local_only: bool) -> Self {
+    pub fn new(socket_addr: String, encryption_password: Vec<u8>, timeout: Duration, save_location: Option<PathBuf>, local_only: bool) -> Self {
         Self { socket_addr, encryption_password, timeout, save_location, local_only }
     }
     /// Creates a new `Config` with default values.
-    pub fn new_default(encryption_password: Vec<u8>, socket_addr: SocketAddr, save_location: Option<PathBuf>) -> Self {
+    pub fn new_default(encryption_password: Vec<u8>, socket_addr: String, save_location: Option<PathBuf>) -> Self {
         Self {
             socket_addr,
             encryption_password,
@@ -63,9 +63,9 @@ impl Config {
     pub fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }
-    /// Returns the `Config`'s port.
-    pub fn socket_addr(&self) -> SocketAddr {
-        self.socket_addr
+    /// Returns the `Config`'s socket address.
+    pub fn socket_addr(&self) -> &str {
+        &self.socket_addr
     }
     /// Returns the `Config`'s encryption password.
     pub fn encryption_password(&self) -> &Vec<u8> {
@@ -102,7 +102,8 @@ impl Config {
 /// use mtd::{Config, MtdNetMgr, TdList, Todo};
 ///
 /// let password = b"Very secure password.";
-/// let addr = "127.0.0.1:55995".parse().unwrap();
+/// let addr = "127.0.0.1:55995".to_string();
+/// let addr1 = addr.clone();
 ///
 /// // Create a new thread to act as a server.
 /// thread::spawn(move || {
@@ -120,7 +121,7 @@ impl Config {
 ///
 /// let mut client_list = TdList::new_client();///
 ///
-/// let conf = Config::new_default(password.to_vec(), addr, None);
+/// let conf = Config::new_default(password.to_vec(), addr1, None);
 /// let mut client_mgr = MtdNetMgr::new(&mut client_list, &conf);
 /// client_mgr.client_sync().unwrap();
 ///
@@ -318,7 +319,7 @@ mod network_tests {
     #[test]
     fn mtd_net_mgr_returns_err_if_server_listener_ran_with_client_td_list() {
         let conf = Config::new(
-            "127.0.0.1:55996".parse().unwrap(),
+            "127.0.0.1:55996".to_string(),
             Vec::new(),
             Duration::from_secs(30),
             None,
@@ -333,7 +334,7 @@ mod network_tests {
     #[test]
     fn mtd_net_mgr_returns_err_if_client_sync_ran_with_server_td_list() {
         let conf = Config::new(
-            "127.0.0.1:55996".parse().unwrap(),
+            "127.0.0.1:55996".to_string(),
             Vec::new(),
             Duration::from_secs(30),
             None,
@@ -348,7 +349,7 @@ mod network_tests {
     #[test]
     fn mtd_net_mgr_returns_err_if_client_sync_ran_as_local_ins() {
         let conf = Config::new(
-            "127.0.0.1:55996".parse().unwrap(),
+            "127.0.0.1:55996".to_string(),
             Vec::new(),
             Duration::from_secs(30),
             None,
@@ -363,7 +364,7 @@ mod network_tests {
     #[test]
     fn mtd_net_mgr_returns_err_if_server_listener_ran_as_local_ins() {
         let conf = Config::new(
-            "127.0.0.1:55996".parse().unwrap(),
+            "127.0.0.1:55996".to_string(),
             Vec::new(),
             Duration::from_secs(30),
             None,
@@ -392,12 +393,12 @@ mod network_tests {
 
         client.add_todo(Todo::new_undated("Todo 3".to_string()));
 
-        let client_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), None, false);
+        let client_conf = Config::new("127.0.0.1:55997".to_string(), b"hunter42".to_vec(), Duration::from_secs(30), None, false);
         let mut client_mgr = MtdNetMgr::new(&mut client, &client_conf);
 
         thread::spawn(move || {
             let server_path = env::temp_dir().join(Path::new("mtd-server-write-test-file"));
-            let server_conf = Config::new("127.0.0.1:55997".parse().unwrap(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()), false);
+            let server_conf = Config::new("127.0.0.1:55997".to_string(), b"hunter42".to_vec(), Duration::from_secs(30), Some(server_path.clone()), false);
             let mut server_mgr = MtdNetMgr::new(&mut server, &server_conf);
             server_mgr.server_listening_loop().unwrap();
         });
