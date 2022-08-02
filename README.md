@@ -1,35 +1,38 @@
 # Mtd - My Todo
 
-![example workflow](https://github.com/Windore/mtd/actions/workflows/rust.yml/badge.svg)
+![workflow](https://github.com/Windore/mtd/actions/workflows/rust.yml/badge.svg)
 
-Lightweight todo and task management app with built-in encrypted synchronization support, written in Rust.
+Lightweight todo and task management app with built-in encrypted synchronization support, written in Rust. See the
+[android app](https://github.com/Windore/mtd-android) too.
 
 https://user-images.githubusercontent.com/65563192/178841983-8f8c5aec-7b46-42bd-9484-fbf4aa73ec5d.mp4
 
-Mtd is a yet another todo app as enough of those don't exist yet. However, mtd has some benefits over the existing apps,
-mtd has built-in synchronization, it's lightweight and has a clean CLI. I am also planning on writing an Android app for
-mtd. As for security, all network transmissions for synchronization are encrypted using AES GCM.
+Mtd is a yet another todo app as enough of those don't exist yet. However, mtd has some benefits
+over the existing apps, mtd has built-in synchronization, it's lightweight and has both a
+[CLI](https://github.com/Windore/mtd) and an [Android](https://github.com/Windore/mtd) version. As
+for security, all network transmissions for synchronization are encrypted using AES GCM.
 
 <details>
   <summary>Mtd's synchronization follows a star topology</summary>
-  
-  Mtd's synchronization works by having a single machine function as a server. Other devices then connect to that server.
-  Having an external server machine is helpful, but not necessary, as a mtd server can be run on a desktop machine
-  alongside the normal client instance. The server is packed into the same binary so installing anything extra is not
-  required.
-  
+
+Mtd's synchronization works by having a single machine function as a server. Other devices then connect to that server.
+Having an external server machine is helpful, but not necessary, as a mtd server can be run on a desktop machine
+alongside the normal client instance. The server is packed into the same binary so installing anything extra is not
+required.
+
 </details>
 
 <details>
   <summary>Mtd supports one-time todos and repeating tasks.</summary>
-  
-  Both items have an id that can be used for marking them as done and modifying them. 
-  
-  Todos are things that you expect to do once. As not all todos should be done immediately, it is possible to specify
-  a weekday for doing a todo. Done todos are automatically removed one day after completion. 
-  
-  Tasks are things that you expect to do weekly. When creating a new task, you should specify the weekdays for doing the task.
-  
+
+Both items have an id that can be used for marking them as done and modifying them.
+
+Todos are things that you expect to do once. As not all todos should be done immediately, it is possible to specify
+a weekday for doing a todo. Done todos are automatically removed one day after completion.
+
+Tasks are things that you expect to do weekly. When creating a new task, you should specify the weekdays for doing the
+task.
+
 </details>
 
 
